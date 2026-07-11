@@ -1,49 +1,31 @@
-# GrannySmith design evaluation rubric
+# Design evaluation rubric
 
-Score every category from 0–10, then compute the weighted total. Be severe: the core question is “Would this stand out in an award-level product gallery while still feeling production-ready?”
+Score every category from 0–10 and compute the weighted total.
 
 ### Design Quality (weight: 0.35)
 
-- Visual hierarchy and five-second comprehension
-- Composition, typography, color, depth, and restraint
-- Desktop and mobile art direction
-- Cohesion between hero, evidence, insights, and footer
-- Clear product credibility rather than decorative spectacle
+- Clear focal point and hierarchy within five seconds.
+- Generous spacing; no visual crowding or competing panels.
+- Current-step progressive disclosure is unmistakable.
+- Typography, color, layout, and states feel polished and cohesive.
 
 ### Originality (weight: 0.30)
 
-- A memorable GrannySmith-specific visual signature
-- Unusual but intelligible spatial or narrative choices
-- Avoidance of generic gradient-SaaS and dashboard-template tropes
-- Motion and data visualization that express the product concept
+- Feels like a purpose-built usability observatory, not a generic dashboard or form wizard.
+- Live thoughts, heatmap signals, and fix proposals are integrated into the session surface in a distinctive way.
+- Uses an intentional visual idea rather than accumulating cards.
 
 ### Craft (weight: 0.25)
 
-- Animation timing, easing, choreography, and state clarity
-- Microinteraction polish, cursor behavior, glow discipline, and detail consistency
-- Responsive behavior, overflow safety, and readable scale
-- Reduced-motion behavior and semantic accessibility
-- No visible rendering defects or browser console errors
+- Responsive at desktop and mobile widths.
+- Controls have strong alignment, readable sizing, clear states, and accessible semantics.
+- Transitions between setup, personas, and live run feel considered.
+- No stale or duplicated UI from the previous design appears.
 
 ### Functionality (weight: 0.10)
 
-- Navigation and primary form remain usable
-- Existing demo data and scoring narrative remain intact
-- Reasonable bundle/performance discipline
-- Tests, types, lint, and production build remain healthy
+- Analyze, persona creation, tester count, dispatch, persona switching, voice, heatmap, fix brief, and replay flow still work.
 
-## Pass threshold
+## Passing threshold
 
-Weighted total must be at least **7.5 / 10**.
-
-## Required evaluator output
-
-Write `feedback/feedback-N.md` containing:
-
-1. Screenshot sizes inspected
-2. Category scores and weighted calculation
-3. Weighted total on a line formatted `Weighted total: X.XX / 10`
-4. Award-level verdict
-5. Three strongest decisions
-6. Up to five prioritized improvements
-7. Any functionality, accessibility, overflow, or console defects
+Weighted total must be at least 7.5/10. A design cannot pass if setup and live monitoring are visible simultaneously or if the first step requires scrolling at 1440×900.

@@ -1,8 +1,32 @@
 "use client";
 
-import { Sparkles, UserPlus } from "lucide-react";
+import { ChevronDown, Sparkles, UserPlus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { PersonaScenario } from "@/lib/schemas/run";
+
+const PERSONA_SUGGESTIONS: Array<PersonaDraft & { label: string }> = [
+  {
+    label: "Grandma new to apps",
+    displayName: "Margaret",
+    description:
+      "An older adult who is new to apps, reads every label carefully, and worries that a click may commit to something.",
+    digitalConfidence: "low",
+  },
+  {
+    label: "Busy parent on mobile",
+    displayName: "Sam",
+    description:
+      "A busy parent using one hand on a phone who scans quickly and needs the next action to be obvious.",
+    digitalConfidence: "medium",
+  },
+  {
+    label: "Screen reader user",
+    displayName: "Jordan",
+    description:
+      "A screen reader user who depends on descriptive labels, logical focus order, and clear form feedback.",
+    digitalConfidence: "high",
+  },
+];
 
 export type PersonaDraft = {
   displayName: string;
@@ -36,36 +60,51 @@ export function PersonaBuilder({
     setCreatedName(draft.displayName);
   }
 
+  function applySuggestion(suggestion: PersonaDraft) {
+    if (disabled) return;
+    setDisplayName(suggestion.displayName);
+    setDescription(suggestion.description);
+    setDigitalConfidence(suggestion.digitalConfidence);
+    setCreatedName(null);
+  }
+
   return (
-    <section className="rounded-lg border border-grape/25 bg-grape/5 p-4">
-      <div className="flex items-start gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-grape text-white">
-          <UserPlus size={18} />
-        </span>
-        <div>
-          <p className="font-black">Create your own persona</p>
-          <p className="mt-1 text-sm leading-5 text-ink/60">
-            Describe a real perspective. We’ll structure it and pass it to an H Company agent.
-          </p>
-        </div>
+    <details className="custom-persona">
+      <summary>
+        <span><UserPlus size={16} /></span>
+        <b>Add someone specific</b>
+        <small>e.g. my grandma</small>
+        <ChevronDown size={15} />
+      </summary>
+      <div className="custom-persona-body">
+      <div className="custom-suggestions" aria-label="Persona suggestions">
+        {PERSONA_SUGGESTIONS.map((suggestion) => (
+          <button
+            className="custom-suggestion"
+            disabled={disabled}
+            key={suggestion.label}
+            onClick={() => applySuggestion(suggestion)}
+            type="button"
+          >
+            {suggestion.label}
+          </button>
+        ))}
       </div>
 
-      <form className="mt-4 grid gap-3" onSubmit={handleSubmit}>
-        <div className="grid gap-3 sm:grid-cols-[1fr_0.8fr]">
-          <label className="grid gap-1.5 text-xs font-black uppercase tracking-[0.12em] text-ink/55">
+      <form className="custom-persona-form" onSubmit={handleSubmit}>
+        <div className="custom-persona-fields">
+          <label>
             Persona name
             <input
-              className="min-h-10 rounded-md border border-ink/15 bg-white px-3 text-sm font-medium normal-case tracking-normal text-ink"
               maxLength={40}
               onChange={(event) => setDisplayName(event.target.value)}
               placeholder="e.g. Alex"
               value={displayName}
             />
           </label>
-          <label className="grid gap-1.5 text-xs font-black uppercase tracking-[0.12em] text-ink/55">
+          <label>
             Digital confidence
             <select
-              className="min-h-10 rounded-md border border-ink/15 bg-white px-3 text-sm font-medium normal-case tracking-normal text-ink"
               onChange={(event) =>
                 setDigitalConfidence(event.target.value as PersonaDraft["digitalConfidence"])
               }
@@ -77,26 +116,24 @@ export function PersonaBuilder({
             </select>
           </label>
         </div>
-        <label className="grid gap-1.5 text-xs font-black uppercase tracking-[0.12em] text-ink/55">
+        <label>
           Describe your persona
           <textarea
-            className="min-h-24 rounded-md border border-ink/15 bg-white px-3 py-2 text-sm font-medium leading-6 normal-case tracking-normal text-ink"
             maxLength={1200}
             onChange={(event) => setDescription(event.target.value)}
-            placeholder="Example: A color-blind parent shopping on a phone who distrusts surprise subscriptions."
+            placeholder="Who are they, what device do they use, and what makes them hesitate?"
             value={description}
           />
         </label>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs font-semibold text-ink/50" aria-live="polite">
+        <div className="custom-persona-action">
+          <p aria-live="polite">
             {disabled
               ? "Generate the panel first, then add your persona."
               : createdName
                 ? `${createdName} is ready to join the panel.`
-                : "One custom persona can join the four generated testers."}
+                : "This persona will join the suggested testers."}
           </p>
           <button
-            className="inline-flex min-h-10 items-center gap-2 rounded-md bg-grape px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
             disabled={
               disabled || !displayName.trim() || description.trim().length < 12
             }
@@ -106,6 +143,7 @@ export function PersonaBuilder({
           </button>
         </div>
       </form>
-    </section>
+      </div>
+    </details>
   );
 }

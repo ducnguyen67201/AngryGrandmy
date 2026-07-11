@@ -11,6 +11,7 @@ const H_BASE_URL =
 const H_AGENT = process.env.HAI_AGENT ?? "h/web-surfer-flash";
 
 type HSessionResponse = Record<string, unknown>;
+export type AgentRuntimeEvent={id:string;sessionId:string;personaId:string;cursor:number;step:number;createdAt:string;type:"narration"|"research"|"frustration";text?:string;emotion?:string;query?:string;category?:string;severity?:1|2|3|4|5;observation?:string;visibleEvidence?:string;currentUrl?:string;recommendation?:string};
 
 export function isHCompanyConfigured() {
   return Boolean(process.env.HAI_API_KEY);
@@ -125,6 +126,7 @@ export async function getHCompanySessionResult(
     eventText: extractEventText(eventsJson),
   });
 }
+export async function getHCompanySessionEvents(sessionId:string,personaId:string):Promise<AgentRuntimeEvent[]>{const json=await hFetch<HSessionResponse>(`/sessions/${encodeURIComponent(sessionId)}/events`),seen=new Set<string>();return collectStrings(json).flatMap(v=>{const m=v.indexOf("GRANNY_EVENT"),a=v.indexOf("{",m),b=v.indexOf("}",a);if(m<0||a<0||b<0)return[];const raw=v.slice(a,b+1);if(seen.has(raw))return[];seen.add(raw);try{return[JSON.parse(raw)as Record<string,unknown>]}catch{return[]}}).flatMap<AgentRuntimeEvent>((e,i)=>{const base={id:`${sessionId}:${i+1}`,sessionId,personaId,cursor:i+1,step:Number(e.step??0),createdAt:new Date().toISOString()};if(e.type==="think_aloud"&&typeof e.text==="string")return[{...base,type:"narration",text:e.text,emotion:String(e.emotion??"neutral")}];if(e.type==="research_docs"&&typeof e.query==="string")return[{...base,type:"research",query:e.query}];const severity=Number(e.severity);if(e.type!=="report_frustration"||![1,2,3,4,5].includes(severity)||typeof e.observation!=="string"||typeof e.visibleEvidence!=="string"||typeof e.currentUrl!=="string")return[];return[{...base,type:"frustration",category:String(e.category??"clarity"),severity:severity as 1|2|3|4|5,observation:e.observation,visibleEvidence:e.visibleEvidence,currentUrl:e.currentUrl,recommendation:String(e.suggestedDirection??"Remove this barrier.")}]})}
 
 function buildPersonaPrompt(
   request: AnalyzeRequest,
@@ -149,6 +151,7 @@ function buildPersonaPrompt(
     `Safety boundaries: ${analysis.globalSafetyBoundaries.join("; ")}`,
     `Stop conditions: ${persona.stopConditions.join("; ")}`,
     "Do not submit real purchases, appointments, payments, messages, credentials, or private information.",
+    'While testing emit GRANNY_EVENT strict JSON for think_aloud, research_docs, and report_frustration. Frustration includes category, severity, observation, visibleEvidence, currentUrl, step, and suggestedDirection. Continue when safe.',
     "When finished, return ONLY strict JSON with this exact shape:",
     JSON.stringify(
       {

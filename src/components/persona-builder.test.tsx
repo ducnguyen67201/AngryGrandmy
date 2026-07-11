@@ -3,6 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 import { PersonaBuilder } from "./persona-builder";
 
 describe("PersonaBuilder", () => {
+  it("offers one-click persona suggestions for common target users", () => {
+    render(<PersonaBuilder disabled={false} onCreate={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /grandma new to apps/i }));
+
+    expect(screen.getByLabelText(/persona name/i)).toHaveValue("Margaret");
+    expect(screen.getByLabelText(/describe your persona/i)).toHaveValue(
+      "An older adult who is new to apps, reads every label carefully, and worries that a click may commit to something.",
+    );
+    expect(screen.getByLabelText(/digital confidence/i)).toHaveValue("low");
+  });
+
   it("collects a persona description and creates a previewable tester", () => {
     const onCreate = vi.fn();
     render(<PersonaBuilder disabled={false} onCreate={onCreate} />);
