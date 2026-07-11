@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AlertTriangle, Check, Clock3, MousePointer2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { RunSnapshot, VisualAgentState } from "@/lib/schemas/run";
@@ -25,7 +24,7 @@ const actorAccents = {
 } as const;
 
 export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = useReducedMotionPreference();
   const [activeStep, setActiveStep] = useState(3);
 
   useEffect(() => {
@@ -33,10 +32,16 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
 
     const timer = window.setInterval(() => {
       setActiveStep((step) => (step + 1) % steps.length);
-    }, 2400);
+    }, 4200);
 
     return () => window.clearInterval(timer);
   }, [reduceMotion]);
+
+  useEffect(() => {
+    const restartTrajectory = () => setActiveStep(0);
+    window.addEventListener("grannysmith:release-panel", restartTrajectory);
+    return () => window.removeEventListener("grannysmith:release-panel", restartTrajectory);
+  }, []);
 
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session]),
@@ -51,6 +56,8 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
       <div className="journey-aurora" aria-hidden="true" />
       <div className="journey-grid" aria-hidden="true" />
       <div className="journey-scan" aria-hidden="true" />
+      <div className="route-energy-particle route-energy-main" aria-hidden="true" />
+      <div className="route-energy-particle route-energy-warn" aria-hidden="true" />
 
       <div className="journey-toolbar">
         <div>
@@ -101,21 +108,6 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
           <use href="#warn-route" className="route-line route-line-warn" />
         </g>
 
-        {!reduceMotion && (
-          <>
-            <circle r="5" fill="#d8fff5" filter="url(#route-glow)">
-              <animateMotion dur="7s" repeatCount="indefinite">
-                <mpath href="#main-route" />
-              </animateMotion>
-            </circle>
-            <circle r="5" fill="#fff1c4" filter="url(#route-glow)">
-              <animateMotion dur="5.2s" begin="-2s" repeatCount="indefinite">
-                <mpath href="#warn-route" />
-              </animateMotion>
-            </circle>
-          </>
-        )}
-
         {[
           [102, 190],
           [300, 300],
@@ -142,6 +134,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         activity="Scanning results"
         actor="Rosa"
         accent={actorAccents.rosa}
+        active={activeStep === 0}
         className="journey-card-search"
         cursorPath={{ x: [18, 72, 46, 80, 18], y: [52, 52, 72, 82, 52] }}
         delay={0}
@@ -157,6 +150,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         activity="Comparing options"
         actor="Linda"
         accent={actorAccents.linda}
+        active={activeStep > 0 && activeStep < 4}
         className="journey-card-options"
         cursorPath={{ x: [18, 48, 76, 48, 18], y: [62, 62, 62, 84, 62] }}
         delay={0.8}
@@ -174,6 +168,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         activity="Entering details"
         actor="Mei"
         accent={actorAccents.mei}
+        active={activeStep === 5}
         className="journey-card-form"
         cursorPath={{ x: [76, 45, 30, 72, 76], y: [78, 50, 50, 79, 78] }}
         delay={1.6}
@@ -189,6 +184,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         activity="Waiting for context"
         actor="Joan"
         accent={actorAccents.joan}
+        active={activeStep === 4}
         className="journey-card-blocked"
         cursorPath={{ x: [72, 34, 34, 64, 72], y: [72, 48, 48, 72, 72] }}
         delay={2.4}
@@ -204,6 +200,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         activity="Reviewing summary"
         actor="Rosa"
         accent={actorAccents.rosa}
+        active={activeStep === 6}
         className="journey-card-success"
         cursorPath={{ x: [78, 24, 62, 74, 78], y: [74, 48, 58, 80, 74] }}
         delay={3.2}
@@ -215,10 +212,8 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         <div className="mock-button">Review details</div>
       </BrowserCard>
 
-      <motion.aside
-        className="persona-observation"
-        animate={reduceMotion ? undefined : { y: [0, -6, 0] }}
-        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+      <aside
+        className={`persona-observation ${activeStep === 4 ? "is-active" : ""}`}
       >
         <span className="persona-avatar persona-avatar-joan">J</span>
         <div>
@@ -228,7 +223,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
           </div>
           <p>“I see the calendar, but I don’t know if pressing it books something.”</p>
         </div>
-      </motion.aside>
+      </aside>
 
       <aside className="live-steps" aria-label="Current trajectory steps">
         <div className="live-steps-heading">
@@ -242,15 +237,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
               key={step}
             >
               <span>{index < activeStep ? <Check size={11} /> : index + 1}</span>
-              <AnimatePresence mode="popLayout" initial={false}>
-                <motion.b
-                  key={`${step}-${index === activeStep}`}
-                  initial={{ opacity: 0.55 }}
-                  animate={{ opacity: 1 }}
-                >
-                  {step}
-                </motion.b>
-              </AnimatePresence>
+              <b>{step}</b>
             </li>
           ))}
         </ol>
@@ -290,6 +277,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
 
 function BrowserCard({
   accent,
+  active,
   activity,
   actor,
   children,
@@ -300,6 +288,7 @@ function BrowserCard({
   title,
 }: {
   accent: string;
+  active: boolean;
   activity: string;
   actor: string;
   children: React.ReactNode;
@@ -309,14 +298,10 @@ function BrowserCard({
   mode: "scan" | "click" | "type" | "pause" | "review";
   title: string;
 }) {
-  const reduceMotion = useReducedMotion();
-
   return (
-    <motion.article
-      className={`journey-browser-card ${className}`}
+    <article
+      className={`journey-browser-card ${className} ${active ? "is-active" : ""}`}
       style={{ "--actor-accent": accent } as React.CSSProperties}
-      animate={reduceMotion ? undefined : { y: [0, -5, 0] }}
-      transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
     >
       <div className="browser-chrome">
         <span /><span /><span />
@@ -327,70 +312,86 @@ function BrowserCard({
         <ComputerUseActor
           activity={activity}
           actor={actor}
+          active={active}
           cursorPath={cursorPath}
           delay={delay}
           mode={mode}
         />
       </div>
-    </motion.article>
+    </article>
   );
 }
 
 function ComputerUseActor({
   activity,
   actor,
+  active,
   cursorPath,
   delay,
   mode,
 }: {
   activity: string;
   actor: string;
+  active: boolean;
   cursorPath: { x: number[]; y: number[] };
   delay: number;
   mode: "scan" | "click" | "type" | "pause" | "review";
 }) {
-  const reduceMotion = useReducedMotion();
   const startX = `${cursorPath.x[0]}%`;
   const startY = `${cursorPath.y[0]}%`;
+  const cursorStyle = {
+    left: startX,
+    top: startY,
+    "--cursor-x-0": startX,
+    "--cursor-y-0": startY,
+    "--cursor-x-1": `${cursorPath.x[1]}%`,
+    "--cursor-y-1": `${cursorPath.y[1]}%`,
+    "--cursor-x-2": `${cursorPath.x[2]}%`,
+    "--cursor-y-2": `${cursorPath.y[2]}%`,
+    "--cursor-x-3": `${cursorPath.x[3]}%`,
+    "--cursor-y-3": `${cursorPath.y[3]}%`,
+    "--cursor-delay": `${delay}s`,
+    "--cursor-duration": mode === "pause" ? "6.4s" : "5.2s",
+  } as React.CSSProperties;
 
   return (
     <>
-      <div className={`computer-use-status computer-use-${mode}`}>
+      <div className={`computer-use-status computer-use-${mode} ${active ? "is-active" : ""}`}>
         <span />
         {activity}
         {mode === "type" && <i aria-hidden="true">•••</i>}
       </div>
       {mode === "scan" && <div aria-hidden="true" className="agent-scan-line" />}
-      <motion.div
+      <div
         aria-label={`Computer-use agent ${actor}: ${activity}`}
-        className={`in-window-agent in-window-agent-${mode}`}
-        style={{ left: startX, top: startY }}
-        animate={
-          reduceMotion
-            ? undefined
-            : {
-                left: cursorPath.x.map((value) => `${value}%`),
-                top: cursorPath.y.map((value) => `${value}%`),
-              }
-        }
-        transition={{
-          delay,
-          duration: mode === "pause" ? 6.4 : 5.2,
-          ease: "easeInOut",
-          repeat: Infinity,
-          times: [0, 0.3, 0.52, 0.78, 1],
-        }}
+        className={`in-window-agent in-window-agent-${mode} ${active ? "is-active" : ""}`}
+        style={cursorStyle}
       >
         <span aria-hidden="true" className="in-window-agent-label">{actor} · live</span>
         <span aria-hidden="true" className="cursor-trail cursor-trail-one" />
         <span aria-hidden="true" className="cursor-trail cursor-trail-two" />
         <span aria-hidden="true" className="in-window-click" />
         <MousePointer2 aria-hidden="true" size={14} strokeWidth={2.4} />
-      </motion.div>
+      </div>
     </>
   );
 }
 
 function formatState(state: VisualAgentState): string {
   return state.charAt(0).toUpperCase() + state.slice(1);
+}
+
+function useReducedMotionPreference(): boolean {
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () => setReduceMotion(media.matches);
+    updatePreference();
+    media.addEventListener("change", updatePreference);
+    return () => media.removeEventListener("change", updatePreference);
+  }, []);
+
+  return reduceMotion;
 }

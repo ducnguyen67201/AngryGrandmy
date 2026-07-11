@@ -4,18 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import { AnimatedAgentJourney } from "./animated-agent-journey";
 
-const motionPreference = vi.hoisted(() => ({ reduced: false }));
-
-vi.mock("motion/react", async () => {
-  const actual = await vi.importActual<typeof import("motion/react")>("motion/react");
-  return {
-    ...actual,
-    useReducedMotion: () => motionPreference.reduced,
-  };
-});
-
 afterEach(() => {
-  motionPreference.reduced = false;
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -45,13 +35,17 @@ describe("AnimatedAgentJourney", () => {
     vi.useFakeTimers();
     render(createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }));
 
-    act(() => vi.advanceTimersByTime(2400));
+    act(() => vi.advanceTimersByTime(4200));
 
     expect(screen.getByText("Step 5 of 7")).toBeInTheDocument();
   });
 
   it("keeps the initial step still when reduced motion is requested", () => {
-    motionPreference.reduced = true;
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
     vi.useFakeTimers();
     render(createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }));
 
@@ -80,5 +74,27 @@ describe("AnimatedAgentJourney", () => {
     expect(screen.getByText("Entering details")).toBeInTheDocument();
     expect(screen.getByText("Waiting for context")).toBeInTheDocument();
     expect(screen.getByText("Reviewing summary")).toBeInTheDocument();
+  });
+
+  it("keeps a stable route-particle tree when reduced motion is requested", () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    const { container } = render(
+      createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }),
+    );
+
+    expect(container.querySelectorAll(".route-energy-particle")).toHaveLength(2);
+    expect(container.querySelector("animateMotion")).not.toBeInTheDocument();
+  });
+
+  it("restarts the trajectory when the demo panel is released", () => {
+    render(createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }));
+
+    act(() => window.dispatchEvent(new Event("grannysmith:release-panel")));
+
+    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
   });
 });

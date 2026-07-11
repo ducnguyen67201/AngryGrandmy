@@ -2,11 +2,11 @@ import {
   ArrowRight,
   CheckCircle2,
   ExternalLink,
-  Play,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
+import { DemoLaunchForm } from "@/components/demo-launch-form";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 
 export default function Home() {
@@ -45,18 +45,7 @@ export default function Home() {
               hesitate, backtrack, and succeed—before your customers have to.
             </p>
 
-            <form className="hero-form" id="start">
-              <label htmlFor="target-url">Authorized product URL</label>
-              <div className="hero-form-row">
-                <input
-                  id="target-url"
-                  defaultValue="https://demo-health.example"
-                  type="url"
-                />
-                <button type="button"><Play size={17} /> Release the panel</button>
-              </div>
-              <p><ShieldCheck size={14} /> Only test sites you own or have permission to evaluate.</p>
-            </form>
+            <DemoLaunchForm />
 
             <div className="hero-proof">
               <div className="proof-avatars" aria-hidden="true">
@@ -96,20 +85,23 @@ export default function Home() {
         </div>
 
         <div className="result-cards">
-          <article className="result-card result-score">
-            <ShieldCheck />
+          <article className="result-card result-score" style={{ "--signal-color": "#55d8c1" } as React.CSSProperties}>
+            <div className="result-card-icon result-prism"><i /><ShieldCheck /></div>
+            <span className="evidence-provenance">Completion + trust signals</span>
             <p className="result-number">{report?.score ?? 0}<span>/100</span></p>
             <h3>Human-Friendly Score</h3>
             <p>Calculated from completion, clarity, efficiency, recovery, and trust.</p>
           </article>
-          <article className="result-card">
-            <Sparkles />
+          <article className="result-card" style={{ "--signal-color": "#8d6cff" } as React.CSSProperties}>
+            <div className="result-card-icon"><Sparkles /></div>
+            <span className="evidence-provenance">Shared persona signals</span>
             <p className="result-number">{report?.sharedHotspots.length ?? 0}</p>
             <h3>Shared friction hotspots</h3>
             <p>Confusion clustered across multiple synthetic personas.</p>
           </article>
-          <article className="result-card">
-            <ExternalLink />
+          <article className="result-card" style={{ "--signal-color": "#ff756d" } as React.CSSProperties}>
+            <div className="result-card-icon"><ExternalLink /></div>
+            <span className="evidence-provenance">Trajectory provenance</span>
             <p className="result-number">{snapshot.sessions.length}</p>
             <h3>Evidence replays</h3>
             <p>Step-level screenshots and actions for every completed trajectory.</p>
