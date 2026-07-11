@@ -8,6 +8,11 @@ import {
   buildMarkdownReport,
   buildReportJson,
 } from "@/lib/report/export-report";
+import {
+  buildVisualHotspots,
+  summarizeHotspots,
+  type VisualHotspot,
+} from "@/lib/hotspots/build-hotspots";
 import type {
   NormalizedSession,
   RunSnapshot,
@@ -126,6 +131,11 @@ export default function Home() {
     [snapshot.sessions],
   );
   const report = snapshot.report;
+  const hotspots = useMemo(
+    () => buildVisualHotspots(snapshot.sessions, snapshot.analysis),
+    [snapshot.analysis, snapshot.sessions],
+  );
+  const hotspotSummary = useMemo(() => summarizeHotspots(hotspots), [hotspots]);
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
   );
@@ -470,6 +480,14 @@ export default function Home() {
     setExportLine(`${kind === "markdown" ? "Markdown" : "JSON"} report downloaded.`);
   }
 
+  function handleHotspotSelect(hotspot: VisualHotspot) {
+    setSnapshot((current) => ({
+      ...current,
+      selectedPersonaId: hotspot.personaId,
+    }));
+    setDrawerOpen(true);
+  }
+
   return (
     <main className="min-h-screen px-5 py-6 text-ink md:px-8">
       <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.92fr_1.08fr]">
@@ -621,6 +639,33 @@ export default function Home() {
                     <div className="m-2 h-3 rounded bg-mint/70" />
                     <div className="mx-2 mt-3 h-2 rounded bg-white/20" />
                     <div className="mx-2 mt-2 h-2 w-2/3 rounded bg-white/16" />
+                    {hotspots
+                      .filter((hotspot) => hotspot.personaId === persona.id)
+                      .slice(0, 4)
+                      .map((hotspot) => (
+                        <span
+                          aria-label={`${hotspot.personaName} ${hotspot.category} hotspot`}
+                          className={`absolute grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/70 text-[9px] font-black text-white shadow-lg hotspot-pulse ${hotspotClass(
+                            hotspot.severity,
+                          )}`}
+                          key={hotspot.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleHotspotSelect(hotspot);
+                          }}
+                          role="button"
+                          style={{
+                            left: `${hotspot.x}%`,
+                            top: `${hotspot.y}%`,
+                            height: `${14 + hotspot.severity * 2}px`,
+                            width: `${14 + hotspot.severity * 2}px`,
+                          }}
+                          tabIndex={0}
+                          title={`${hotspot.category}: ${hotspot.evidence}`}
+                        >
+                          {hotspot.severity}
+                        </span>
+                      ))}
                   </div>
                   <div className="mx-auto mb-9 h-28 w-24 rounded-t-full bg-[#d9b18f] shadow-lg">
                     <div className="mx-auto h-10 w-16 rounded-b-full bg-white/75" />
@@ -696,8 +741,10 @@ export default function Home() {
         </div>
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <Sparkles className="mb-4 text-grape" />
-          <p className="text-3xl font-black">{report?.sharedHotspots.length ?? 0} hotspots</p>
-          <p className="mt-2 text-sm text-ink/66">Shared confusion clustered across personas.</p>
+          <p className="text-3xl font-black">{hotspots.length} hotspots</p>
+          <p className="mt-2 text-sm text-ink/66">
+            {hotspotSummary.trust} trust, {hotspotSummary.clarity} clarity, {hotspotSummary.navigation} navigation.
+          </p>
         </div>
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <ExternalLink className="mb-4 text-tomato" />
@@ -971,6 +1018,12 @@ function stationClass(state: VisualAgentState): string {
 
 function variantClass(variant: number): string {
   return ["bg-grape", "bg-mint", "bg-brass", "bg-tomato"][variant] ?? "bg-grape";
+}
+
+function hotspotClass(severity: number): string {
+  if (severity >= 4) return "bg-tomato";
+  if (severity === 3) return "bg-brass";
+  return "bg-mint";
 }
 
 function scoreImpactLabel(session?: NormalizedSession): string {
