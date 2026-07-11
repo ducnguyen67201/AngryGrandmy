@@ -380,8 +380,10 @@ export default function Home() {
 
         setLocalizedHotspots(payload.data);
         setHeatmapLine(
-          payload.meta?.mode === "openai"
-            ? `Model-localized heatmap (${payload.meta.model ?? "OpenAI"}).`
+          payload.meta?.mode === "nvidia"
+            ? `NVIDIA-localized heatmap (${payload.meta.model ?? "Nemotron"}).`
+            : payload.meta?.mode === "openai"
+              ? `Model-localized heatmap (${payload.meta.model ?? "OpenAI"}).`
             : `Fallback heatmap${payload.meta?.fallbackReason ? `: ${payload.meta.fallbackReason}` : "."}`,
         );
       } catch (error) {

@@ -3,14 +3,15 @@ import { demoAnalysis, demoSessions } from "@/lib/fixtures/demo-run";
 import { localizeHotspots } from "./localize-hotspots";
 
 describe("localizeHotspots", () => {
-  it("uses deterministic fallback without an OpenAI key", async () => {
+  it("uses deterministic fallback without a model localization key", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("NVIDIA_API_KEY", "");
 
     const result = await localizeHotspots(demoSessions, demoAnalysis);
 
     expect(result.mode).toBe("heuristic");
     expect(result.hotspots.length).toBeGreaterThan(0);
-    expect(result.fallbackReason).toContain("OPENAI_API_KEY");
+    expect(result.fallbackReason).toContain("model localization key");
   });
 
   it("returns empty fallback when there are no friction events", async () => {
