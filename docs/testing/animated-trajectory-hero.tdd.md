@@ -11,13 +11,14 @@ No plan file was supplied. The journey was derived from the landing-page request
 | The trajectory visualization exists and is labeled for assistive technology | `pnpm test -- src/components/animated-agent-journey.test.tsx` failed because `./animated-agent-journey` did not exist | The same target passed as part of 15/15 tests | The hero exposes a named region, live status, step progress, and persona results |
 | Progress animation respects user preferences | Missing component at RED | Component tests cover progression and reduced-motion behavior | The step counter advances normally and remains still under reduced motion |
 | Session gaps degrade safely | Missing component at RED | Component test verifies all personas display `Queued` without session data | The hero remains readable before live session events arrive |
+| Every browser window feels actively controlled | Component test failed because no window exposed a computer-use actor | Component test verifies five independent agents and their visible activity labels | Search, comparison, form, blocked, and review cards each show their own cursor behavior and status |
 
 ## Verification
 
 | Check | Command | Result |
 |---|---|---|
-| Component and project tests | `pnpm test:coverage` | PASS — 15/15 tests |
-| Coverage | `pnpm test:coverage` | PASS — 94.7% statements, 80% branches, 97.95% functions, 94.44% lines |
+| Component and project tests | `pnpm test:coverage` | PASS — 16/16 tests |
+| Coverage | `pnpm test:coverage` | PASS — 94.9% statements, 81.48% branches, 98.07% functions, 94.66% lines |
 | Types | `pnpm typecheck` | PASS |
 | Lint | `pnpm lint` | PASS |
 | Production build | `pnpm build` | PASS — static `/` generated |
