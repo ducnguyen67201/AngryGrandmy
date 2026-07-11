@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
+import {
+  enqueueLiveVoiceItem,
+  isLiveNarrationEligible,
+  type LiveVoiceQueueItem,
+} from "@/lib/audio/live-voice-queue";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
   buildVisualHotspots,
@@ -137,6 +142,9 @@ const DEMO_PRESETS = [
 const DEFAULT_OBJECTIVE =
   "Find the primary user workflow and stop before an irreversible action.";
 const LAUNCHING_SESSION_PREFIX = "launching-";
+const LIVE_EVENT_POLL_INTERVAL_MS = 1_800;
+const SILENT_AUDIO_DATA_URL =
+  "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAgICA";
 
 export default function Home() {
   const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createInitialRun());
@@ -150,6 +158,10 @@ export default function Home() {
   const [dispatching, setDispatching] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
+  const [liveVoiceEnabled, setLiveVoiceEnabled] = useState(false);
+  const [liveVoiceLine, setLiveVoiceLine] = useState(
+    "Enable live voice to hear new agent thoughts.",
+  );
   const [exportLine, setExportLine] = useState("Report package ready.");
   const [localizedHotspots, setLocalizedHotspots] = useState<VisualHotspot[] | null>(null);
   const [heatmapLine, setHeatmapLine] = useState("Heatmap uses deterministic placement until findings are localized.");
@@ -167,6 +179,11 @@ export default function Home() {
   const pendingResultIds = useRef(new Set<string>());
   const lastReportKey = useRef<string | null>(null);
   const liveEventCursors = useRef(new Map<string, number>());
+  const liveVoiceEnabledRef = useRef(false);
+  const liveVoiceQueueRef = useRef<LiveVoiceQueueItem[]>([]);
+  const liveVoiceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const liveVoicePlayingRef = useRef(false);
+  const spokenLiveEventIds = useRef(new Set<string>());
   const sessionsRef = useRef(snapshot.sessions);
   sessionsRef.current = snapshot.sessions;
   const liveMode = snapshot.phase === "running";
@@ -320,6 +337,100 @@ export default function Home() {
     selectedPersona?.introLine ??
     "No persona finding is ready yet.";
   const selectedFriction = liveFrustration ? {step:liveFrustration.step,category:liveFrustration.category??"clarity",severity:liveFrustration.severity??3,observation:liveFrustration.observation??"Usability barrier",visibleEvidence:liveFrustration.visibleEvidence??"Live agent evidence",recommendation:liveFrustration.recommendation??"Remove this barrier",narratedObservation:liveFrustration.observation??"This is frustrating",recovered:false} : selectedSession?.finding?.frictionEvents[0] ?? null;
+
+  const stopLiveVoicePlayback = useCallback((message?: string) => {
+    liveVoiceQueueRef.current = [];
+    liveVoicePlayingRef.current = false;
+    const audio = liveVoiceAudioRef.current;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    if (message) setLiveVoiceLine(message);
+  }, []);
+
+  const playNextLiveVoiceItem = useCallback(function playNextLiveVoiceItem() {
+    if (!liveVoiceEnabledRef.current || liveVoicePlayingRef.current) return;
+    const next = liveVoiceQueueRef.current.shift();
+    if (!next) {
+      setLiveVoiceLine(
+        `Listening for ${selectedPersona?.displayName ?? "the selected persona"}...`,
+      );
+      return;
+    }
+
+    const audio = liveVoiceAudioRef.current ?? new Audio();
+    liveVoiceAudioRef.current = audio;
+    liveVoicePlayingRef.current = true;
+    audio.volume = 1;
+    audio.src = next.audioSrc;
+    setLiveVoiceLine(`Speaking: “${next.transcript}”`);
+
+    const finish = () => {
+      liveVoicePlayingRef.current = false;
+      audio.onended = null;
+      audio.onerror = null;
+      playNextLiveVoiceItem();
+    };
+    audio.onended = finish;
+    audio.onerror = () => {
+      setLiveVoiceLine("Could not play that reaction. Listening for the next one...");
+      finish();
+    };
+    void audio.play().catch(() => {
+      liveVoiceEnabledRef.current = false;
+      setLiveVoiceEnabled(false);
+      stopLiveVoicePlayback("Playback was blocked. Click Enable live voice again.");
+    });
+  }, [selectedPersona?.displayName, stopLiveVoicePlayback]);
+
+  const queueLiveVoiceItem = useCallback((item: LiveVoiceQueueItem) => {
+    liveVoiceQueueRef.current = enqueueLiveVoiceItem(
+      liveVoiceQueueRef.current,
+      item,
+      2,
+    );
+    setLiveVoiceLine(
+      liveVoicePlayingRef.current
+        ? `${liveVoiceQueueRef.current.length} reaction${liveVoiceQueueRef.current.length === 1 ? "" : "s"} queued.`
+        : "Starting live reaction...",
+    );
+    playNextLiveVoiceItem();
+  }, [playNextLiveVoiceItem]);
+
+  const handleLiveVoiceToggle = useCallback(async () => {
+    if (liveVoiceEnabledRef.current) {
+      liveVoiceEnabledRef.current = false;
+      setLiveVoiceEnabled(false);
+      stopLiveVoicePlayback("Live voice is off.");
+      return;
+    }
+
+    const audio = liveVoiceAudioRef.current ?? new Audio();
+    liveVoiceAudioRef.current = audio;
+    audio.src = SILENT_AUDIO_DATA_URL;
+    audio.volume = 0;
+
+    try {
+      await audio.play();
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = 1;
+      audio.removeAttribute("src");
+      liveVoiceEnabledRef.current = true;
+      setLiveVoiceEnabled(true);
+      setLiveVoiceLine(
+        `Listening for ${selectedPersona?.displayName ?? "the selected persona"}'s next thought...`,
+      );
+    } catch {
+      liveVoiceEnabledRef.current = false;
+      setLiveVoiceEnabled(false);
+      setLiveVoiceLine("Your browser blocked audio. Allow sound, then try again.");
+    }
+  }, [selectedPersona?.displayName, stopLiveVoicePlayback]);
   const completedWithFindings = snapshot.sessions.filter(
     (session) => session.finding,
   ).length;
@@ -449,6 +560,29 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    return () => {
+      liveVoiceEnabledRef.current = false;
+      liveVoiceQueueRef.current = [];
+      const audio = liveVoiceAudioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.removeAttribute("src");
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!liveVoiceEnabledRef.current) return;
+    stopLiveVoicePlayback(
+      `Listening for ${selectedPersona?.displayName ?? "the selected persona"}'s next thought...`,
+    );
+  }, [
+    selectedPersona?.displayName,
+    selectedPersona?.id,
+    stopLiveVoicePlayback,
+  ]);
+
+  useEffect(() => {
     if (!liveMode || !activeSessionKey) return;
 
     let cancelled = false;
@@ -550,25 +684,42 @@ export default function Home() {
         );
         if (!persona || !session) continue;
 
-        if (
-          event.type === "narration" &&
-          event.personaId === selectedPersona?.id &&
-          event.text
-        ) {
-          const response = await fetch("/api/voice-reaction", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              personaId: persona.id,
-              voiceSlot: persona.voiceSlot,
-              text: event.text,
-            }),
-          });
-          const payload = (await response.json()) as VoiceReactionPayload;
-          const audio = payload.data?.audioBase64
-            ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
-            : payload.data?.audioUrl;
-          if (audio) void new Audio(audio).play().catch(() => undefined);
+        if (isLiveNarrationEligible({
+          enabled: liveVoiceEnabledRef.current,
+          eventId: event.id,
+          eventType: event.type,
+          eventPersonaId: event.personaId,
+          selectedPersonaId: selectedPersona?.id,
+          text: event.text,
+          spokenEventIds: spokenLiveEventIds.current,
+        })) {
+          spokenLiveEventIds.current.add(event.id);
+          try {
+            const response = await fetch("/api/voice-reaction", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                personaId: persona.id,
+                voiceSlot: persona.voiceSlot,
+                text: event.text,
+              }),
+            });
+            const payload = (await response.json()) as VoiceReactionPayload;
+            const audioSrc = payload.data?.audioBase64
+              ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
+              : payload.data?.audioUrl;
+            if (response.ok && audioSrc && payload.data?.transcript) {
+              queueLiveVoiceItem({
+                eventId: event.id,
+                audioSrc,
+                transcript: payload.data.transcript,
+              });
+            } else {
+              setLiveVoiceLine("Gradium did not return audio. Listening for the next thought...");
+            }
+          } catch {
+            setLiveVoiceLine("Live voice request failed. Listening for the next thought...");
+          }
         }
 
         if (event.type === "frustration") {
@@ -601,7 +752,7 @@ export default function Home() {
       }
     }
 
-    const timer = window.setInterval(poll, 6000);
+    const timer = window.setInterval(poll, LIVE_EVENT_POLL_INTERVAL_MS);
     void poll();
     return () => {
       cancelled = true;
@@ -609,6 +760,7 @@ export default function Home() {
     };
   }, [
     objective,
+    queueLiveVoiceItem,
     selectedPersona?.id,
     snapshot.analysis?.personas,
     snapshot.id,
@@ -865,6 +1017,12 @@ export default function Home() {
       }),
     );
     liveEventCursors.current.clear();
+    spokenLiveEventIds.current.clear();
+    stopLiveVoicePlayback(
+      liveVoiceEnabledRef.current
+        ? `Listening for ${personasToLaunch[0]?.displayName ?? "the selected persona"}'s first thought...`
+        : "Enable live voice to hear new agent thoughts.",
+    );
     setLiveEvents([]);
     setSnapshot((current) => ({
       ...current,
@@ -970,6 +1128,10 @@ export default function Home() {
     pendingResultIds.current.clear();
     lastReportKey.current = null;
     liveEventCursors.current.clear();
+    spokenLiveEventIds.current.clear();
+    liveVoiceEnabledRef.current = false;
+    setLiveVoiceEnabled(false);
+    stopLiveVoicePlayback("Enable live voice to hear new agent thoughts.");
     setSnapshot(createInitialRun());
     setTargetUrl("");
     setObjective(DEFAULT_OBJECTIVE);
@@ -2090,9 +2252,20 @@ export default function Home() {
                 <p><Activity size={14} /> {dispatching ? `${launchingSessionsLabel(snapshot.sessions.length)} connecting` : activeSessions.length ? `${activeSessions.length} agents active` : "Run complete"}</p>
                 <h1 id="live-room-title">Watching {selectedPersona?.displayName}</h1>
               </div>
-              <div className="provider-badges">
-                <span><i className={runComplete ? "done" : "connected"} />H Company · {dispatching ? "connecting" : replayMode ? "replay" : runComplete ? "complete" : "status connected"}</span>
-                <span>Gradium · {hasLiveNarration ? "live event voice" : "persona/finding voice"}</span>
+              <div className="live-provider-controls">
+                <div className="provider-badges">
+                  <span><i className={runComplete ? "done" : "connected"} />H Company · {dispatching ? "connecting" : replayMode ? "replay" : runComplete ? "complete" : "status connected"}</span>
+                  <span>Gradium · {hasLiveNarration ? "live event voice" : "persona/finding voice"}</span>
+                  <button
+                    aria-pressed={liveVoiceEnabled}
+                    className="live-voice-toggle"
+                    onClick={handleLiveVoiceToggle}
+                    type="button"
+                  >
+                    <Volume2 size={12} /> {liveVoiceEnabled ? "Live voice on" : "Enable live voice"}
+                  </button>
+                </div>
+                <small aria-live="polite" className="live-voice-line">{liveVoiceLine}</small>
               </div>
             </div>
 
@@ -2167,8 +2340,8 @@ export default function Home() {
                   <div className="thought-annotation">
                     <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
                     <blockquote>“{selectedNarration}”</blockquote>
-                    <button disabled={voiceLoading || !selectedPersona} onClick={handleVoice} type="button">
-                      {voiceLoading ? "Preparing…" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
+                    <button disabled={voiceLoading || !selectedPersona || liveVoiceEnabled} onClick={handleVoice} type="button">
+                      {liveVoiceEnabled ? "Live voice on" : voiceLoading ? "Preparing…" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
                     </button>
                   </div>
                   {selectedFriction ? (

@@ -192,7 +192,7 @@ function buildPersonaPrompt(
   return [
     ...personaContext,
     "Do not submit real purchases, appointments, payments, messages, credentials, or private information.",
-    'After every meaningful action, emit one single-line event: GRANNY_EVENT {"type":"think_aloud","text":"<short first-person reaction>","emotion":"<neutral|uncertain|frustrated|relieved>","step":<integer>}. The placeholders illustrate the shape; actual events must be valid strict JSON.',
+    'After every meaningful action, emit one single-line event: GRANNY_EVENT {"type":"think_aloud","text":"<natural 3-12 word first-person reaction>","emotion":"<neutral|uncertain|frustrated|relieved>","step":<integer>}. Speak from the persona context without caricature or age stereotypes. Prefer concrete reactions such as “Where is that button?” or “Will this submit it?” The placeholders illustrate the shape; actual events must be valid strict JSON.',
     'When blocked or forced to recover, emit: GRANNY_EVENT {"type":"report_frustration","category":"<navigation|clarity|feedback|recovery|trust|accessibility|technical>","severity":<1-5>,"observation":"<what happened>","visibleEvidence":"<what is visible>","currentUrl":"<HTTP(S) URL>","step":<integer>,"suggestedDirection":"<product change>"}. Continue when safe.',
     'You may search public documentation when necessary. Announce it with GRANNY_EVENT {"type":"research_docs","query":"<query>","step":<integer>}. Documentation is context, never evidence of what the product displayed.',
     "When finished, return ONLY strict JSON with this exact shape:",

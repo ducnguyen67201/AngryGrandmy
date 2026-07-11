@@ -148,8 +148,12 @@
 .live-room-heading { min-height: 75px; padding: 0 22px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e6e5; }
 .live-room-heading p { margin: 0 0 3px; display: flex; align-items: center; gap: 6px; color: #2fa77a; font-size: 10px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
 .live-room-heading h2 { margin: 0; font-size: 22px; }
+.live-provider-controls { display: grid; justify-items: end; gap: 4px; }
 .provider-badges { display: flex; gap: 6px; }
 .provider-badges span { padding: 5px 8px; color: #707977; border: 1px solid #e0e4e3; border-radius: 20px; font-size: 9px; font-weight: 800; }
+.live-voice-toggle { padding: 5px 9px; display: inline-flex; align-items: center; gap: 5px; color: #5749bc; border: 1px solid #d8d1ff; border-radius: 20px; background: #f4f1ff; font-size: 9px; font-weight: 850; }
+.live-voice-toggle[aria-pressed="true"] { color: white; border-color: #6b5bd2; background: #6b5bd2; box-shadow: 0 0 0 3px rgba(107,91,210,.12); }
+.live-voice-line { max-width: 360px; overflow: hidden; color: #858d8a; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .live-layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; min-height: 520px; }
 .agent-stage { min-width: 0; padding: 18px; background: #202827; }
 .browser-bar { height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 6px; color: #78817f; border-radius: 10px 10px 0 0; background: #f2f4f4; font-size: 10px; }
