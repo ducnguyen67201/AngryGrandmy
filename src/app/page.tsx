@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
+import { Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
+import {
+  buildJudgeSummary,
+  buildMarkdownReport,
+  buildReportJson,
+} from "@/lib/report/export-report";
 import type {
   NormalizedSession,
   RunSnapshot,
@@ -59,6 +64,7 @@ export default function Home() {
   const [dispatching, setDispatching] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
+  const [exportLine, setExportLine] = useState("Report package ready.");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
@@ -408,6 +414,26 @@ export default function Home() {
     }
   }
 
+  async function handleCopySummary() {
+    try {
+      await navigator.clipboard.writeText(buildJudgeSummary(snapshot));
+      setExportLine("Judge summary copied.");
+    } catch {
+      setExportLine("Clipboard unavailable. Use download instead.");
+    }
+  }
+
+  function handleDownloadReport(kind: "markdown" | "json") {
+    const content =
+      kind === "markdown"
+        ? buildMarkdownReport(snapshot)
+        : buildReportJson(snapshot);
+    const filename = `${slugify(snapshot.analysis?.productName ?? "grannysmith")}-report.${kind === "markdown" ? "md" : "json"}`;
+    const mime = kind === "markdown" ? "text/markdown" : "application/json";
+    downloadTextFile(filename, content, mime);
+    setExportLine(`${kind === "markdown" ? "Markdown" : "JSON"} report downloaded.`);
+  }
+
   return (
     <main className="min-h-screen px-5 py-6 text-ink md:px-8">
       <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.92fr_1.08fr]">
@@ -612,6 +638,48 @@ export default function Home() {
       </section>
 
       <section className="mx-auto mt-4 grid max-w-7xl gap-4 lg:grid-cols-[0.82fr_1.18fr]">
+        <article className="rounded-lg border border-ink/12 bg-white/70 p-5 lg:col-span-2">
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.16em] text-ink/45">
+                Export package
+              </p>
+              <p className="mt-2 text-lg font-black">
+                {buildJudgeSummary(snapshot)}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-ink/45">
+                {exportLine}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="inline-flex min-h-10 items-center gap-2 rounded-md bg-ink px-4 text-sm font-black text-paper"
+                onClick={handleCopySummary}
+                type="button"
+              >
+                <Clipboard size={16} />
+                Copy Summary
+              </button>
+              <button
+                className="inline-flex min-h-10 items-center gap-2 rounded-md border border-ink/15 bg-white px-4 text-sm font-black text-ink"
+                onClick={() => handleDownloadReport("markdown")}
+                type="button"
+              >
+                <Download size={16} />
+                Markdown
+              </button>
+              <button
+                className="inline-flex min-h-10 items-center gap-2 rounded-md border border-ink/15 bg-white px-4 text-sm font-black text-ink"
+                onClick={() => handleDownloadReport("json")}
+                type="button"
+              >
+                <Download size={16} />
+                JSON
+              </button>
+            </div>
+          </div>
+        </article>
+
         <article className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <p className="text-sm font-bold uppercase tracking-[0.16em] text-ink/45">
             Focused persona voice
@@ -855,4 +923,23 @@ function speakWithBrowser(text: string) {
   utterance.rate = 0.9;
   utterance.pitch = 1.05;
   window.speechSynthesis.speak(utterance);
+}
+
+function downloadTextFile(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || "grannysmith";
 }
