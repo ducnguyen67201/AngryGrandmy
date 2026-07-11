@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
+  getLiveVoicePlaybackMode,
   getScreenNarrationCandidate,
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
+  shouldSpeakCurrentNarrationOnEnable,
   shouldEnableLiveVoiceForDispatch,
   type LiveVoiceQueueItem,
 } from "./live-voice-queue";
@@ -15,6 +18,34 @@ const item = (id: string): LiveVoiceQueueItem => ({
 });
 
 describe("live persona voice queue", () => {
+  it("keeps text-only provider responses as browser speech queue items", () => {
+    const fallback = createLiveVoiceQueueItem({
+      eventId: "finding-1",
+      audioSrc: null,
+      transcript: "I cannot tell what this button will do.",
+    });
+
+    expect(fallback).toEqual({
+      eventId: "finding-1",
+      audioSrc: null,
+      transcript: "I cannot tell what this button will do.",
+    });
+    expect(getLiveVoicePlaybackMode(fallback!)).toBe("browser-speech");
+  });
+
+  it("speaks the visible finding immediately when voice is enabled after completion", () => {
+    expect(shouldSpeakCurrentNarrationOnEnable({
+      runComplete: true,
+      selectedPersonaId: "arjun",
+      narration: "I want to understand the requirements before continuing.",
+    })).toBe(true);
+    expect(shouldSpeakCurrentNarrationOnEnable({
+      runComplete: false,
+      selectedPersonaId: "arjun",
+      narration: "Wait for the next live event.",
+    })).toBe(false);
+  });
+
   it("keeps only the newest pending reactions when narration falls behind", () => {
     const queue = [item("one"), item("two")];
 
