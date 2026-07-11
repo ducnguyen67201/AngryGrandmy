@@ -17,11 +17,19 @@ export async function GET(req: NextRequest) {
     return fail("missing_session_id", "sessionId is required.", 400);
   }
 
-  if (!isHCompanyConfigured() || sessionId.startsWith("demo-")) {
+  if (sessionId.startsWith("demo-")) {
     const session = createDemoRun().sessions.find(
       (item) => item.sessionId === sessionId || item.personaId === personaId,
     );
-    return ok(session ?? null, { mode: "demo-replay" });
+    return ok(session ?? null, { mode: "legacy-demo-fixture" });
+  }
+
+  if (!isHCompanyConfigured()) {
+    return fail(
+      "h_company_not_configured",
+      "Real H Company session results require HAI_API_KEY.",
+      503,
+    );
   }
 
   try {

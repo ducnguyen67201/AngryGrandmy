@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { ok, validationFailure } from "@/lib/api/responses";
+import { fail, ok, validationFailure } from "@/lib/api/responses";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
   createHCompanySession,
@@ -37,20 +37,10 @@ export async function POST(req: NextRequest) {
         : generatedPersonasToLaunch;
 
     if (!isHCompanyConfigured()) {
-      const replay = createDemoRun({ url: request.url, objective: request.objective, analysis });
-      return ok(
-        {
-          ...replay,
-          sessions: replay.sessions.filter((session) =>
-            personasToLaunch.some((persona) => persona.id === session.personaId),
-          ),
-        },
-        {
-          mode: "demo-replay",
-          configured: false,
-          requestedCount: personasToLaunch.length,
-          reason: "HAI_API_KEY is not configured.",
-        },
+      return fail(
+        "h_company_not_configured",
+        "Real H Company runs require HAI_API_KEY. Configure H before dispatching agents.",
+        503,
       );
     }
 
@@ -64,20 +54,10 @@ export async function POST(req: NextRequest) {
     ).length;
 
     if (launchedCount === 0) {
-      const replay = createDemoRun({ url: request.url, objective: request.objective, analysis });
-      return ok(
-        {
-          ...replay,
-          sessions: replay.sessions.filter((session) =>
-            personasToLaunch.some((persona) => persona.id === session.personaId),
-          ),
-        },
-        {
-          mode: "demo-replay",
-          configured: true,
-          requestedCount: personasToLaunch.length,
-          reason: "All H Company launches failed, so GrannySmith used replay mode.",
-        },
+      return fail(
+        "h_company_launch_failed",
+        "All H Company launches failed. No fallback evidence was substituted.",
+        502,
       );
     }
 
@@ -95,7 +75,7 @@ export async function POST(req: NextRequest) {
         finishedAt: new Date().toISOString(),
         agentViewUrl: null,
         outcome: "failure",
-        latestActionLabel: "H Company launch failed; replay remains available.",
+        latestActionLabel: "H Company launch failed.",
         finding: null,
         errorCode: "provider_failure",
       };

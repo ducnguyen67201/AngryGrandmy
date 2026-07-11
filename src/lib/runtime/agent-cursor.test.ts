@@ -73,7 +73,7 @@ describe("agent cursor replay", () => {
     })).toBeNull();
   });
 
-  it("builds a bounded moving fallback path for legacy demo replays", () => {
+  it("builds a bounded moving fallback path for legacy fixture replays", () => {
     const first = buildDemoCursorFallback(0, 10);
     const middle = buildDemoCursorFallback(5, 10);
 

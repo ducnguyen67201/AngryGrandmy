@@ -48,7 +48,6 @@ import {
   TESTER_COUNT_OPTIONS,
   type TesterCount,
 } from "@/lib/run/tester-count";
-import { calculateUsabilityReport } from "@/lib/scoring/calculate-report";
 import type {
   NormalizedSession,
   RunSnapshot,
@@ -224,6 +223,7 @@ export default function Home() {
   const screenNarratedEventIds = useRef(new Set<string>());
   const lastScreenNarrationAt = useRef(0);
   const replaySpokenEventIds = useRef(new Set<string>());
+  const autoPlanFromUrl = useRef(false);
   const sessionsRef = useRef(snapshot.sessions);
   sessionsRef.current = snapshot.sessions;
   const liveMode = snapshot.phase === "running";
@@ -455,6 +455,63 @@ export default function Home() {
     selectedPersona?.introLine ??
     "No persona finding is ready yet.";
   const selectedFriction = liveFrustration ? {step:liveFrustration.step,category:liveFrustration.category??"clarity",severity:liveFrustration.severity??3,observation:liveFrustration.observation??"Usability barrier",visibleEvidence:liveFrustration.visibleEvidence??"Live agent evidence",recommendation:liveFrustration.recommendation??"Remove this barrier",narratedObservation:liveFrustration.observation??"This is frustrating",recovered:false} : replayFrameIndex === null ? selectedSession?.finding?.frictionEvents[0] ?? null : null;
+
+  const generatePlan = useCallback(async (
+    statusMessage = "Generating the persona test plan before dispatch.",
+  ) => {
+    setLoading(true);
+    setStatusLine(statusMessage);
+
+    try {
+      const response = await fetch("/api/generate-test-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: targetUrl,
+          objective,
+          authorizationConfirmed: authorized,
+        }),
+      });
+      const payload = (await response.json()) as TestPlanPayload;
+
+      if (!response.ok || !payload.data?.analysis) {
+        throw new Error(payload.error?.message ?? "Could not generate a persona plan.");
+      }
+
+      const now = new Date().toISOString();
+      const plannedAnalysis = activeCalibration
+        ? mergeCalibratedPersona(
+            payload.data.analysis,
+            createCalibratedPersona(activeCalibration),
+          )
+        : payload.data.analysis;
+      setSnapshot((current) => ({
+        ...current,
+        id: `plan-${Date.now()}`,
+        phase: "revealing",
+        url: targetUrl,
+        objective,
+        analysis: plannedAnalysis,
+        sessions: [],
+        selectedPersonaId: activeCalibration
+          ? `calibrated-${activeCalibration.id}`
+          : plannedAnalysis.personas[0]?.id ?? null,
+        report: null,
+        error: null,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      setPersonasAccepted(false);
+      setLocalizedHotspots(null);
+      setStatusLine(
+        `Generated ${plannedAnalysis.personas.length} personas${activeCalibration ? ", including the approved behavioral proxy," : ""} with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
+      );
+    } catch (error) {
+      setStatusLine(error instanceof Error ? error.message : "Could not generate a persona plan.");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeCalibration, authorized, objective, targetUrl]);
 
   const stopLiveVoicePlayback = useCallback((message?: string) => {
     liveVoiceQueueRef.current = [];
@@ -928,27 +985,24 @@ export default function Home() {
       window.localStorage.getItem(PERSISTED_LAB_STATE_KEY),
     );
 
-    if (queryState.demoReplay) {
-      const demoSnapshot = createDemoShareRun({
-        targetUrl: queryState.targetUrl ?? DEFAULT_TARGET_URL,
-        objective: queryState.objective ?? DEFAULT_OBJECTIVE,
-        testerCount: queryState.testerCount ?? DEFAULT_TESTER_COUNT,
-      });
-      setSnapshot(demoSnapshot);
-      setTargetUrl(demoSnapshot.url);
-      setObjective(demoSnapshot.objective ?? DEFAULT_OBJECTIVE);
+    if (queryState.realRun) {
+      autoPlanFromUrl.current = true;
+      setSnapshot(createInitialRun());
+      setTargetUrl(queryState.targetUrl ?? DEFAULT_TARGET_URL);
+      setObjective(queryState.objective ?? DEFAULT_OBJECTIVE);
       setSelectedPresetId(null);
       setTesterCount(queryState.testerCount ?? DEFAULT_TESTER_COUNT);
       setAuthorized(true);
-      setPersonasAccepted(true);
+      setPersonasAccepted(false);
       setLocalizedHotspots(null);
       setLiveEvents([]);
       setReplayFrameIndex(null);
       setReplayPlaying(false);
-      setStatusLine("Demo replay loaded from the URL. Click replay or enable voice to present it.");
-      setPersistenceLine("Loaded demo replay evidence from the URL.");
+      setStatusLine("Preparing a real run from the URL. H agents will start only after Dispatch.");
+      setPersistenceLine("Loaded real-run configuration from the URL.");
       setHasRestoredSavedRun(false);
     } else if (saved && shouldRestorePersistedRun(saved, queryState)) {
+      autoPlanFromUrl.current = false;
       setSnapshot(saved.snapshot);
       setTargetUrl(saved.targetUrl);
       setObjective(saved.objective);
@@ -960,17 +1014,40 @@ export default function Home() {
       setPersistenceLine(`Restored saved run from ${new Date(saved.savedAt).toLocaleTimeString()}.`);
       setHasRestoredSavedRun(true);
     } else if (hasQueryState) {
+      autoPlanFromUrl.current = false;
       setPersonasAccepted(false);
       if (queryState.targetUrl) setTargetUrl(queryState.targetUrl);
       if (queryState.objective) setObjective(queryState.objective);
       if (queryState.testerCount) setTesterCount(queryState.testerCount);
       setPersistenceLine("Loaded test configuration from the URL.");
     } else {
+      autoPlanFromUrl.current = false;
       setPersistenceLine("Autosave ready.");
     }
 
     setPersistenceHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (
+      !persistenceHydrated ||
+      !autoPlanFromUrl.current ||
+      loading ||
+      snapshot.analysis ||
+      snapshot.sessions.length > 0
+    ) {
+      return;
+    }
+
+    autoPlanFromUrl.current = false;
+    void generatePlan("Generating a real persona plan from the share link.");
+  }, [
+    generatePlan,
+    loading,
+    persistenceHydrated,
+    snapshot.analysis,
+    snapshot.sessions.length,
+  ]);
 
   useEffect(() => {
     if (!persistenceHydrated) return;
@@ -987,8 +1064,8 @@ export default function Home() {
         new URLSearchParams(window.location.search).get("calibration");
       if (calibrationId) params.set("calibration", calibrationId);
       const currentParams = new URLSearchParams(window.location.search);
-      if (currentParams.get("demo") === "1") params.set("demo", "1");
-      if (currentParams.get("replay") === "1") params.set("replay", "1");
+      if (currentParams.get("run") === "1") params.set("run", "1");
+      if (currentParams.get("live") === "1") params.set("live", "1");
       const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
       const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       if (nextUrl !== currentUrl) {
@@ -1405,58 +1482,7 @@ export default function Home() {
 
   async function handlePlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setStatusLine("Generating the persona test plan before dispatch.");
-
-    try {
-      const response = await fetch("/api/generate-test-plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: targetUrl,
-          objective,
-          authorizationConfirmed: authorized,
-        }),
-      });
-      const payload = (await response.json()) as TestPlanPayload;
-
-      if (!response.ok || !payload.data?.analysis) {
-        throw new Error(payload.error?.message ?? "Could not generate a persona plan.");
-      }
-
-      const now = new Date().toISOString();
-      const plannedAnalysis = activeCalibration
-        ? mergeCalibratedPersona(
-            payload.data.analysis,
-            createCalibratedPersona(activeCalibration),
-          )
-        : payload.data.analysis;
-      setSnapshot((current) => ({
-        ...current,
-        id: `plan-${Date.now()}`,
-        phase: "revealing",
-        url: targetUrl,
-        objective,
-        analysis: plannedAnalysis,
-        sessions: [],
-        selectedPersonaId: activeCalibration
-          ? `calibrated-${activeCalibration.id}`
-          : plannedAnalysis.personas[0]?.id ?? null,
-        report: null,
-        error: null,
-        createdAt: now,
-        updatedAt: now,
-      }));
-      setPersonasAccepted(false);
-      setLocalizedHotspots(null);
-      setStatusLine(
-        `Generated ${plannedAnalysis.personas.length} personas${activeCalibration ? ", including the approved behavioral proxy," : ""} with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
-      );
-    } catch (error) {
-      setStatusLine(error instanceof Error ? error.message : "Could not generate a persona plan.");
-    } finally {
-      setLoading(false);
-    }
+    await generatePlan();
   }
 
   async function handleLaunch() {
@@ -1544,7 +1570,7 @@ export default function Home() {
         );
       } else {
         setStatusLine(
-          `Replay fallback loaded for ${payload.data.analysis?.productName ?? "target product"}${payload.meta?.reason ? `: ${payload.meta.reason}` : "."}`,
+          `Run started for ${payload.data.analysis?.productName ?? "target product"}.`,
         );
       }
     } catch (error) {
@@ -3202,37 +3228,6 @@ function createInitialRun(): RunSnapshot {
     selectedPersonaId: null,
     report: null,
     error: null,
-  };
-}
-
-function createDemoShareRun({
-  targetUrl,
-  objective,
-  testerCount,
-}: {
-  targetUrl: string;
-  objective: string;
-  testerCount: TesterCount;
-}): RunSnapshot {
-  const demo = createDemoRun({
-    id: "demo-share-run",
-    url: targetUrl,
-    objective,
-  });
-  const sessions = demo.sessions.slice(0, testerCount);
-  const expectedBudgets = Object.fromEntries(
-    (demo.analysis?.personas ?? []).map((persona) => [
-      persona.id,
-      persona.expectedStepBudget,
-    ]),
-  );
-
-  return {
-    ...demo,
-    sessions,
-    selectedPersonaId: sessions[0]?.personaId ?? demo.selectedPersonaId,
-    report: calculateUsabilityReport(sessions, expectedBudgets),
-    updatedAt: new Date().toISOString(),
   };
 }
 
