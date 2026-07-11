@@ -16,6 +16,10 @@ export function enqueueLiveVoiceItem(
   return [...queue, item].slice(-Math.max(1, maxPending));
 }
 
+export function shouldEnableLiveVoiceForDispatch(enabled: boolean): boolean {
+  return !enabled;
+}
+
 export function isLiveNarrationEligible({
   enabled,
   eventId,

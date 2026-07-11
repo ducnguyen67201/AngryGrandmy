@@ -10,6 +10,7 @@ import {
   getScreenNarrationCandidate,
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
+  shouldEnableLiveVoiceForDispatch,
   type LiveVoiceQueueItem,
 } from "@/lib/audio/live-voice-queue";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
@@ -1244,6 +1245,9 @@ export default function Home() {
 
   async function handleLaunch() {
     if (!snapshot.analysis || !canDispatch) return;
+    if (shouldEnableLiveVoiceForDispatch(liveVoiceEnabledRef.current)) {
+      await handleLiveVoiceToggle();
+    }
     setDispatching(true);
     const beforeLaunch = snapshot;
     const customPersona = snapshot.analysis?.personas.find((persona) =>
