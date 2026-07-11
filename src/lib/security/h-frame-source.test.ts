@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildHFrameProxyUrl,
   validateHFrameSource,
+  validateHFrameRedirect,
 } from "./h-frame-source";
 
 const sessionId = "1d890a31-7648-423b-bcdb-30b8c83cc930";
@@ -23,5 +24,19 @@ describe("H frame source validation", () => {
         sessionId,
       ),
     ).toThrow("Invalid H frame source");
+  });
+
+  it("allows only HTTPS Amazon S3 frame redirects", () => {
+    expect(
+      validateHFrameRedirect(
+        "https://screenshots.s3.amazonaws.com/frame.png?signature=test",
+      ).hostname,
+    ).toBe("screenshots.s3.amazonaws.com");
+    expect(() =>
+      validateHFrameRedirect("http://127.0.0.1/private"),
+    ).toThrow("Invalid H frame redirect");
+    expect(() =>
+      validateHFrameRedirect("https://attacker.example/frame.png"),
+    ).toThrow("Invalid H frame redirect");
   });
 });
