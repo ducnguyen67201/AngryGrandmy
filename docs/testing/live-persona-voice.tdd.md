@@ -38,3 +38,12 @@ This iteration uses Gradium's existing REST TTS response and a browser audio que
 - Behavior: explicit H narration wins. Otherwise, the newest selected-persona frame is vision-analyzed at most once every six seconds and converted into a short first-person thought.
 - Runtime proof: the local `/api/screen-narration` endpoint returned `source: openai` and a spoken observation from an image request.
 - Verification: 30 files and 108 tests pass; ESLint and TypeScript pass. Focused narration coverage is 97.05% statements, 94% branches, 100% functions, and 96.55% lines.
+
+## Completed-run silence regression
+
+- Reported behavior: the UI displayed `Live voice on` for a completed H session but produced no audible speech.
+- Root cause 1: Gradium's safe text fallback had no audio URL, and `synthesizeVoiceItem` discarded the transcript instead of queuing browser speech.
+- Root cause 2: enabling voice after completion waited for a future event instead of speaking the finding already visible on screen.
+- RED checkpoint: `e3ea502 test: reproduce silent completed-run voice` failed both text-fallback and completed-run activation guarantees.
+- GREEN checkpoint: `1859d1f fix: play live voice without provider audio` preserves text-only queue items, plays them with `speechSynthesis`, speaks the current finding on activation, cancels browser speech when voice is stopped, and exposes `Speak this finding again`.
+- Verification: `pnpm test` passes 42 files / 143 tests; `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
