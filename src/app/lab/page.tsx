@@ -56,7 +56,10 @@ import {
   mergeAgentRuntimeEvents,
   type AgentRuntimeEvent,
 } from "@/lib/runtime/agent-events";
-import { getAgentCursorForFrame } from "@/lib/runtime/agent-cursor";
+import {
+  buildDemoCursorFallback,
+  getAgentCursorForFrame,
+} from "@/lib/runtime/agent-cursor";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -360,7 +363,10 @@ export default function Home() {
         events: liveEvents,
         personaId: selectedPersona.id,
         frameCursor: eventCursorLimit,
-        fallback: selectedHotspots.at(-1) ?? null,
+        fallback: buildDemoCursorFallback(
+          activeViewportFrameIndex,
+          viewportFrames.length,
+        ),
       })
     : null;
   const liveViewportPresentation = getLiveViewportPresentation({
@@ -2484,21 +2490,23 @@ export default function Home() {
                   ) : null}
                   {agentCursorPoint ? (
                     <div
-                      aria-label={`${selectedPersona?.displayName ?? "Agent"} cursor, ${agentCursorPoint.source === "agent" ? "reported by H" : "estimated from heatmap evidence"}`}
+                      aria-label={`${selectedPersona?.displayName ?? "Agent"} cursor, ${agentCursorPoint.source === "agent" ? "reported by H" : "estimated for legacy replay"}`}
                       className={`agent-cursor ${agentCursorPoint.source === "evidence" ? "is-estimated" : "is-reported"}`}
+                      data-cursor-source={agentCursorPoint.source}
                       style={{
                         left: `${agentCursorPoint.x}%`,
                         top: `${agentCursorPoint.y}%`,
                       }}
                     >
-                      <MousePointer2 aria-hidden="true" size={24} />
+                      <i aria-hidden="true" />
+                      <MousePointer2 aria-hidden="true" size={30} />
                       <span>
-                        {selectedPersona?.displayName ?? "Agent"} · {agentCursorPoint.source === "agent" ? "live" : "estimated"}
+                        {selectedPersona?.displayName ?? "Agent"} cursor · {agentCursorPoint.source === "agent" ? "live" : "estimated"}
                       </span>
                     </div>
                   ) : liveViewportPresentation.showSyntheticScaffold ? (
                     <div className="agent-cursor is-placeholder" style={{ left: "62%", top: "62%" }}>
-                      <MousePointer2 aria-hidden="true" size={24} />
+                      <MousePointer2 aria-hidden="true" size={30} />
                       <span>Waiting for agent</span>
                     </div>
                   ) : null}

@@ -7,6 +7,21 @@ export type AgentCursorPoint = {
   source: "agent" | "evidence";
 };
 
+export function buildDemoCursorFallback(
+  frameIndex: number,
+  frameCount: number,
+): { id: string; x: number; y: number } {
+  const lastIndex = Math.max(0, Math.floor(frameCount) - 1);
+  const safeIndex = Math.min(lastIndex, Math.max(0, Math.floor(frameIndex)));
+  const progress = lastIndex === 0 ? 0 : safeIndex / lastIndex;
+
+  return {
+    id: `demo-cursor-${safeIndex}`,
+    x: 18 + progress * 64,
+    y: 48 + Math.sin(progress * Math.PI * 2) * 22,
+  };
+}
+
 export function getAgentCursorForFrame({
   events,
   personaId,
