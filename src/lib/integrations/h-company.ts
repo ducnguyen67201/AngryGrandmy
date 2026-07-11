@@ -48,13 +48,16 @@ export async function createHCompanySession(
     stepCount: 0,
     startedAt: new Date().toISOString(),
     finishedAt: null,
-    agentViewUrl: readString(json, [
-      "agent_view_url",
-      "agentViewUrl",
-      "session.agent_view_url",
-      "session.share_url",
-      "urls.agent_view",
-    ]),
+    agentViewUrl: hCompanySessionUrl(
+      sessionId,
+      readString(json, [
+        "agent_view_url",
+        "agentViewUrl",
+        "session.agent_view_url",
+        "session.share_url",
+        "urls.agent_view",
+      ]),
+    ),
     outcome: "unknown",
     latestActionLabel: `H agent launched for ${persona.displayName}`,
     finding: null,
@@ -80,12 +83,15 @@ export async function getHCompanySessionStatus(
     stepCount: Number(readString(json, ["step_count", "stepCount"]) ?? 0),
     startedAt: readString(json, ["started_at", "startedAt"]) ?? null,
     finishedAt: readString(json, ["finished_at", "finishedAt"]) ?? null,
-    agentViewUrl: readString(json, [
-      "agent_view_url",
-      "agentViewUrl",
-      "share_url",
-      "urls.agent_view",
-    ]),
+    agentViewUrl: hCompanySessionUrl(
+      sessionId,
+      readString(json, [
+        "agent_view_url",
+        "agentViewUrl",
+        "share_url",
+        "urls.agent_view",
+      ]),
+    ),
     outcome: completed ? "success" : failed ? "failure" : "unknown",
     latestActionLabel:
       readString(json, ["latest_action", "latestAction", "summary"]) ??
@@ -93,6 +99,11 @@ export async function getHCompanySessionStatus(
     finding: null,
     errorCode: failed ? "provider_failure" : null,
   };
+}
+
+function hCompanySessionUrl(sessionId: string, candidate: string | null): string {
+  if (candidate?.includes("platform.hcompany.ai")) return candidate;
+  return `https://platform.hcompany.ai/agents/sessions/${encodeURIComponent(sessionId)}`;
 }
 
 export async function getHCompanySessionResult(
