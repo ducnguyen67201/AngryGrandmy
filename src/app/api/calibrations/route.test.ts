@@ -17,7 +17,10 @@ function request(overrides?: { consent?: string; video?: File }) {
   form.set("researchUseConfirmed", "true");
   form.set(
     "video",
-    overrides?.video ?? new File(["recording"], "session.webm", { type: "video/webm" }),
+    overrides?.video ??
+      new File([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4, 5])], "session.webm", {
+        type: "video/webm",
+      }),
   );
   return { formData: async () => form } as NextRequest;
 }
@@ -59,5 +62,15 @@ describe("POST /api/calibrations", () => {
         )
       ).status,
     ).toBe(422);
+  });
+
+  it("rejects a spoofed video MIME type", async () => {
+    const response = await POST(
+      request({
+        video: new File(["plain text"], "fake.webm", { type: "video/webm" }),
+      }),
+    );
+
+    expect(response.status).toBe(422);
   });
 });
