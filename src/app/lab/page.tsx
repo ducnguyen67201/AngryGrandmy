@@ -42,6 +42,7 @@ import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 import { getRunGuidance } from "@/lib/ui/run-guidance";
 import { buildPanelReviewItems } from "@/lib/ui/panel-review";
 import { getLiveViewportPresentation } from "@/lib/ui/live-viewport";
+import { canDispatchSuggestedPersonas } from "@/lib/ui/persona-approval";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -139,6 +140,7 @@ export default function Home() {
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [testerCount, setTesterCount] = useState<TesterCount>(4);
   const [authorized, setAuthorized] = useState(true);
+  const [personasAccepted, setPersonasAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
@@ -170,6 +172,13 @@ export default function Home() {
     snapshot.phase === "revealing" &&
     snapshot.sessions.length === 0 &&
     Boolean(snapshot.analysis);
+  const canDispatch = canDispatchSuggestedPersonas({
+    hasAnalysis: Boolean(snapshot.analysis),
+    personasAccepted,
+    authorized,
+    loading,
+    dispatching,
+  });
   const activeSessions = useMemo(
     () =>
       snapshot.sessions.filter(
@@ -311,10 +320,12 @@ export default function Home() {
       setSelectedPresetId(saved.selectedPresetId);
       setTesterCount(isTesterCount(saved.testerCount) ? saved.testerCount : 4);
       setAuthorized(saved.authorized);
+      setPersonasAccepted(saved.personasAccepted);
       setStatusLine(saved.statusLine);
       setPersistenceLine(`Restored saved run from ${new Date(saved.savedAt).toLocaleTimeString()}.`);
       setHasRestoredSavedRun(true);
     } else if (hasQueryState) {
+      setPersonasAccepted(false);
       if (queryState.targetUrl) setTargetUrl(queryState.targetUrl);
       if (queryState.objective) setObjective(queryState.objective);
       if (queryState.testerCount) setTesterCount(queryState.testerCount);
@@ -356,6 +367,7 @@ export default function Home() {
         selectedPresetId,
         testerCount,
         authorized,
+        personasAccepted,
         statusLine,
       });
       window.localStorage.setItem(
@@ -372,6 +384,7 @@ export default function Home() {
     authorized,
     hasRestoredSavedRun,
     objective,
+    personasAccepted,
     persistenceHydrated,
     selectedPresetId,
     snapshot,
@@ -764,6 +777,7 @@ export default function Home() {
         createdAt: now,
         updatedAt: now,
       }));
+      setPersonasAccepted(false);
       setLocalizedHotspots(null);
       setStatusLine(
         `Generated ${payload.data.analysis.personas.length} personas with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
@@ -776,7 +790,7 @@ export default function Home() {
   }
 
   async function handleLaunch() {
-    if (!snapshot.analysis) return;
+    if (!snapshot.analysis || !canDispatch) return;
     setDispatching(true);
     const beforeLaunch = snapshot;
     const customPersona = snapshot.analysis?.personas.find((persona) =>
@@ -870,6 +884,7 @@ export default function Home() {
         objective: objective.trim() || DEFAULT_OBJECTIVE,
         globalSafetyBoundaries: snapshot.analysis.globalSafetyBoundaries,
       });
+      setPersonasAccepted(false);
 
       setSnapshot((current) => {
         if (!current.analysis) return current;
@@ -894,6 +909,15 @@ export default function Home() {
         error instanceof Error ? error.message : "Could not create the custom persona.",
       );
     }
+  }
+
+  function handleAcceptPersonas() {
+    if (!snapshot.analysis) return;
+    setPersonasAccepted(true);
+    setStatusLine(
+      `${snapshot.analysis.personas.length} persona suggestions accepted and saved in this browser.`,
+    );
+    setPersistenceLine("Accepted persona roster saved for this lab run.");
   }
 
   async function handleVoice() {
@@ -1337,13 +1361,31 @@ export default function Home() {
                 </div>
               </section>
             ) : null}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-ink/12 bg-white p-4">
+              <div>
+                <p className="font-black">
+                  {personasAccepted ? "Persona roster accepted" : "Approve these suggestions"}
+                </p>
+                <p className="mt-1 text-sm text-ink/60">
+                  Acceptance saves the generated roster with this lab run.
+                </p>
+              </div>
+              <button
+                className="rounded-md border border-mint bg-mint px-4 py-2 font-black text-ink disabled:opacity-60"
+                disabled={personasAccepted || !snapshot.analysis}
+                onClick={handleAcceptPersonas}
+                type="button"
+              >
+                {personasAccepted ? "Accepted and saved" : "Accept and save"}
+              </button>
+            </div>
             <button
               className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-md border px-5 font-bold transition disabled:cursor-not-allowed disabled:opacity-55 ${
                 panelFeedback.tone === "ready"
                   ? "border-mint bg-mint text-ink shadow-[0_12px_28px_rgba(98,196,155,0.22)] hover:-translate-y-0.5"
                   : "border-ink/18 bg-white text-ink"
               }`}
-              disabled={loading || dispatching || !authorized || !snapshot.analysis}
+              disabled={!canDispatch}
               onClick={handleLaunch}
               type="button"
             >
@@ -1814,6 +1856,7 @@ export default function Home() {
             onClick={() => {
               setSnapshot(createInitialRun());
               setFixRequestIds(new Set());
+              setPersonasAccepted(false);
             }}
             type="button"
           >
@@ -1926,6 +1969,24 @@ export default function Home() {
                 onCreate={handleCreatePersona}
               />
 
+              <div className={`persona-approval ${personasAccepted ? "is-accepted" : ""}`}>
+                <div>
+                  <b>{personasAccepted ? "Persona roster accepted" : "Do these personas look right?"}</b>
+                  <span>
+                    {personasAccepted
+                      ? "Saved with this lab run. You can safely reload before dispatching."
+                      : "Review the suggested users, then accept and save the roster before dispatch."}
+                  </span>
+                </div>
+                <button
+                  disabled={personasAccepted || !snapshot.analysis}
+                  onClick={handleAcceptPersonas}
+                  type="button"
+                >
+                  {personasAccepted ? <><Check size={14} /> Accepted and saved</> : "Accept and save personas"}
+                </button>
+              </div>
+
               <div className="dispatch-row">
                 <div>
                   <span>Testers</span>
@@ -1945,15 +2006,15 @@ export default function Home() {
                 </div>
                 <button
                   className="dispatch-button"
-                  disabled={loading || dispatching || !authorized}
+                  disabled={!canDispatch}
                   onClick={handleLaunch}
                   type="button"
                 >
                   <Play size={17} />
-                  {dispatching ? "Dispatching…" : `Dispatch ${selectedTesterCount} testers`}
+                  {dispatching ? "Dispatching…" : !personasAccepted ? "Accept personas first" : `Dispatch ${selectedTesterCount} testers`}
                 </button>
               </div>
-              <button className="quiet-back" onClick={() => setSnapshot(createInitialRun())} type="button">← Change website</button>
+              <button className="quiet-back" onClick={() => { setSnapshot(createInitialRun()); setPersonasAccepted(false); }} type="button">← Change website</button>
             </section>
           ) : null}
 

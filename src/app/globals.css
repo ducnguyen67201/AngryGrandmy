@@ -129,6 +129,13 @@
 .persona-cards b { font-size: 12px; }
 .persona-cards small { margin-top: 3px; color: #8c9392; font-size: 10px; }
 .persona-cards > button > svg { color: #2fa77a; }
+.persona-approval { margin: 14px 0 4px; padding: 13px 14px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid #dddfe0; border-radius: 10px; background: #fafbfb; }
+.persona-approval.is-accepted { border-color: #9edfc4; background: #eefaf5; }
+.persona-approval b, .persona-approval span { display: block; }
+.persona-approval b { margin-bottom: 3px; font-size: 12px; }
+.persona-approval span { color: #747d7b; font-size: 10px; line-height: 1.4; }
+.persona-approval button { min-height: 34px; padding: 7px 11px; display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; color: white; border: 0; border-radius: 8px; background: #2f8f6b; font-size: 10px; font-weight: 850; }
+.persona-approval button:disabled { color: #34735d; background: #ccebdd; }
 .persona-swatch { width: 31px; height: 31px; display: grid; place-items: center; flex: 0 0 auto; color: #17201f; border-radius: 50%; font-size: 11px; font-weight: 900; }
 .swatch-0 { background: #cfc8ff; } .swatch-1 { background: #a8ead2; } .swatch-2 { background: #f6d59d; } .swatch-3 { background: #f2b3a9; }
 .dispatch-row { margin-top: 14px; display: flex; align-items: end; justify-content: space-between; gap: 16px; }

@@ -17,6 +17,7 @@ const PersistedLabStateSchema = z.object({
   selectedPresetId: z.string().nullable(),
   testerCount: z.number().int().min(1).max(4).default(DEFAULT_TESTER_COUNT),
   authorized: z.boolean(),
+  personasAccepted: z.boolean().default(false),
   statusLine: z.string(),
   savedAt: z.string().datetime(),
 });
@@ -95,6 +96,7 @@ export function buildPersistedLabState({
   selectedPresetId,
   testerCount,
   authorized,
+  personasAccepted = false,
   statusLine,
 }: {
   snapshot: RunSnapshot;
@@ -103,6 +105,7 @@ export function buildPersistedLabState({
   selectedPresetId: string | null;
   testerCount: number;
   authorized: boolean;
+  personasAccepted?: boolean;
   statusLine: string;
 }): PersistedLabState {
   return PersistedLabStateSchema.parse({
@@ -113,6 +116,7 @@ export function buildPersistedLabState({
     selectedPresetId,
     testerCount,
     authorized,
+    personasAccepted,
     statusLine,
     savedAt: new Date().toISOString(),
   });

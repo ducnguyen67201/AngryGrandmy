@@ -504,7 +504,7 @@ async function refineWithHolo(
         },
         {
           role: "user",
-          content: buildLlmPrompt(request, heuristic),
+          content: buildPersonaGenerationPrompt(request, heuristic),
         },
       ],
     }),
@@ -548,7 +548,7 @@ async function refineWithOpenAI(
           content: [
             {
               type: "input_text",
-              text: buildLlmPrompt(request, heuristic),
+              text: buildPersonaGenerationPrompt(request, heuristic),
             },
           ],
         },
@@ -610,10 +610,13 @@ function normalizeModelAnalysis(
   });
 }
 
-function buildLlmPrompt(request: AnalyzeRequest, heuristic: ProductAnalysis) {
+export function buildPersonaGenerationPrompt(
+  request: AnalyzeRequest,
+  heuristic: ProductAnalysis,
+) {
   return JSON.stringify({
     instruction:
-      "Refine this heuristic plan into a product-specific GrannySmith usability test plan for H Company computer-use agents. Keep exactly four personas with ids linda, rosa, mei, joan. Make tasks concrete for the URL/objective. Add dispatchInstruction for each persona. Avoid stereotypes; describe behavioral constraints. Stop before real purchase, booking, payment, account mutation, private data submission, credentials, or irreversible actions.",
+      "Invent four product-specific behavioral personas for this exact URL and objective, then produce a GrannySmith usability test plan for H Company computer-use agents. Keep exactly four internal ids: linda, rosa, mei, joan, but replace their displayName, tagline, context, task, behaviors, and risk profile with distinct users who plausibly need this product. Do not reuse Linda, Rosa, Mei, or Joan as display names unless the product evidence gives a strong reason. Avoid stereotypes and demographics that are not relevant to product behavior. Add dispatchInstruction for each persona. Stop before real purchase, booking, payment, account mutation, private data submission, credentials, or irreversible actions.",
     target: {
       url: request.url,
       objective: request.objective ?? null,
