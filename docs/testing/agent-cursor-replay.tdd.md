@@ -42,3 +42,14 @@ The journey was derived from the demo request: as a researcher watching a live o
 - Live estimated cursors now follow a bounded, smoothly interpolated path every 700 ms between H frame updates. Reported H coordinates remain exact and take priority.
 - Focused verification: 5/5 tests pass with 100% statements, functions, and lines and 95% branch coverage. Targeted ESLint passes.
 - Repository-wide typecheck is currently blocked by unrelated, concurrently added calibration tests whose implementation modules are not yet present.
+
+## Evidence-based localization follow-up
+
+- The animated estimate above is superseded: random cursor movement is no longer rendered when coordinates are absent.
+- RED checkpoints: `3c43308 test: specify evidence-based cursor localization` and `00e8001 test: allow cursor localization during replay`.
+- GREEN checkpoint: `182cdf1 fix: localize cursor from screenshot evidence`.
+- H-reported coordinates remain green and are labeled **H reported**.
+- When H omits coordinates, OpenAI vision may identify the relevant visible element and return validated screenshot-relative `x/y`; these points are blue and labeled **vision located**.
+- When neither source provides a valid position, the cursor is hidden.
+- Cursor coordinates now render inside a 1280×900 `object-fit: contain` coordinate space, preventing the surrounding panel gutters from shifting the point.
+- Verification: 41 files and 137 tests pass; ESLint and TypeScript pass. Focused coverage is 95.71% statements, 91.39% branches, 100% functions, and 98.36% lines.
