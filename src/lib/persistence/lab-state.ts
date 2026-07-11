@@ -131,3 +131,9 @@ export function parsePersistedLabState(value: string | null): PersistedLabState 
     return null;
   }
 }
+
+export function clearPersistedLabState(
+  storage: Pick<Storage, "removeItem">,
+): void {
+  storage.removeItem(PERSISTED_LAB_STATE_KEY);
+}

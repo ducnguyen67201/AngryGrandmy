@@ -20,6 +20,7 @@ import {
 import {
   buildLabSearchParams,
   buildPersistedLabState,
+  clearPersistedLabState,
   parseLabSearchParams,
   parsePersistedLabState,
   PERSISTED_LAB_STATE_KEY,
@@ -957,6 +958,33 @@ export default function Home() {
     setPersistenceLine("Accepted persona roster saved for this lab run.");
   }
 
+  function handleNewTest() {
+    clearPersistedLabState(window.localStorage);
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+    pendingResultIds.current.clear();
+    lastReportKey.current = null;
+    liveEventCursors.current.clear();
+    setSnapshot(createInitialRun());
+    setTargetUrl("");
+    setObjective(DEFAULT_OBJECTIVE);
+    setSelectedPresetId(null);
+    setTesterCount(4);
+    setAuthorized(false);
+    setPersonasAccepted(false);
+    setLoading(false);
+    setDispatching(false);
+    setLiveEvents([]);
+    setReplayFrameIndex(null);
+    setReplayPlaying(false);
+    setLocalizedHotspots(null);
+    setHeatmapLine("Heatmap will appear after friction evidence is captured.");
+    setDrawerOpen(false);
+    setFixRequestIds(new Set());
+    setHasRestoredSavedRun(false);
+    setStatusLine("Enter a website and use case to start a new usability test.");
+    setPersistenceLine("Previous run cleared. New test is not saved yet.");
+  }
+
   async function handleVoice() {
     if (!selectedPersona || voiceLoading) return;
     await playPersonaVoice(
@@ -1888,11 +1916,7 @@ export default function Home() {
         </div>
         {isLiveView ? (
           <button
-            onClick={() => {
-              setSnapshot(createInitialRun());
-              setFixRequestIds(new Set());
-              setPersonasAccepted(false);
-            }}
+            onClick={handleNewTest}
             type="button"
           >
             New test
@@ -2049,7 +2073,7 @@ export default function Home() {
                   {dispatching ? "Dispatching…" : !personasAccepted ? "Accept personas first" : `Dispatch ${selectedTesterCount} testers`}
                 </button>
               </div>
-              <button className="quiet-back" onClick={() => { setSnapshot(createInitialRun()); setPersonasAccepted(false); }} type="button">← Change website</button>
+              <button className="quiet-back" onClick={handleNewTest} type="button">← Change website</button>
             </section>
           ) : null}
 

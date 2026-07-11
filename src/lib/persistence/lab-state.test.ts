@@ -6,6 +6,7 @@ import {
   clearPersistedLabState,
   parseLabSearchParams,
   parsePersistedLabState,
+  PERSISTED_LAB_STATE_KEY,
   PERSISTED_LAB_STATE_VERSION,
   shouldRestorePersistedRun,
 } from "./lab-state";
