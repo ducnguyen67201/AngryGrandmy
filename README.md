@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Live persona orchestration
+
+H sessions emit `GRANNY_EVENT` narration, research, and frustration signals. GrannySmith speaks focused narration through Gradium and creates durable proposal-only fix jobs. Set `GRANNYSMITH_FIX_AGENT_MODE=codex` and `GRANNYSMITH_REPO_PATH=/absolute/path/to/product` to launch two read-only Codex proposal workers; otherwise the app returns a deterministic fallback brief.
+
 ## Getting Started
 
 First, run the development server:
