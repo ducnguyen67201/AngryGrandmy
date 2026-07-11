@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
   buildLabSearchParams,
   buildPersistedLabState,
+  clearPersistedLabState,
   parseLabSearchParams,
   parsePersistedLabState,
   PERSISTED_LAB_STATE_VERSION,
@@ -134,5 +135,13 @@ describe("lab state persistence", () => {
       parsePersistedLabState(JSON.stringify(persisted))?.personasAccepted,
     ).toBe(true);
     expect(persisted.snapshot.analysis?.personas).toHaveLength(4);
+  });
+
+  it("explicitly removes the saved run when starting a new test", () => {
+    const removeItem = vi.fn();
+
+    clearPersistedLabState({ removeItem });
+
+    expect(removeItem).toHaveBeenCalledWith(PERSISTED_LAB_STATE_KEY);
   });
 });
