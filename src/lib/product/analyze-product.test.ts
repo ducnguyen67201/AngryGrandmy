@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildPersonaGenerationPrompt,
-  buildProductAnalysis,
-} from "./analyze-product";
+import { buildProductAnalysis } from "./analyze-product";
+import { buildPersonaGenerationPrompt } from "./persona-generation-prompt";
 
 const baseRequest = {
   authorizationConfirmed: true,
