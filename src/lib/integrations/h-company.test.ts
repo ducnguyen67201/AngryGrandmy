@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createHCompanySession, getHCompanySessionStatus } from "./h-company";
+import {
+  createHCompanySession,
+  getHCompanySessionEvents,
+  getHCompanySessionStatus,
+} from "./h-company";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 import { demoAnalysis } from "@/lib/fixtures/demo-run";
 
@@ -81,5 +85,59 @@ describe("H Company custom persona dispatch", () => {
     const prompt = JSON.parse(String(request.body)).messages[0].message as string;
     expect(prompt).toContain("GRANNY_EVENT");
     expect(prompt).toContain("return ONLY strict JSON");
+  });
+
+  it("returns the real browser viewport from H session changes", async () => {
+    process.env.HAI_API_KEY = "test-key";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          new_events: [
+            {
+              type: "observation_event",
+              timestamp: "2026-07-11T20:40:00.000Z",
+              observation: {
+                kind: "web",
+                url: "https://gettrustloop.app/pricing",
+                image: {
+                  media_type: "image/png",
+                  source: "aGVsbG8=",
+                },
+              },
+            },
+          ],
+          next_index: 9,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const batch = await getHCompanySessionEvents("session-live", "joan", 4);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/sessions/session-live/changes?from_index=4"),
+      expect.any(Object),
+    );
+    expect(batch.cursor).toBe(9);
+    expect(batch.events).toEqual([
+      expect.objectContaining({
+        type: "viewport",
+        personaId: "joan",
+        currentUrl: "https://gettrustloop.app/pricing",
+        imageUrl: "data:image/png;base64,aGVsbG8=",
+      }),
+    ]);
+  });
+
+  it("does not send invalid session identifiers to H", async () => {
+    process.env.HAI_API_KEY = "test-key";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      getHCompanySessionEvents("../admin/secrets", "joan", 0),
+    ).rejects.toThrow("Invalid H Company session id");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
