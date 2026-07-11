@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
+import { ArrowRight, Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
+import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
   buildVisualHotspots,
@@ -568,7 +569,72 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen px-5 py-6 text-ink md:px-8">
+    <>
+      <section className="landing-hero">
+        <nav aria-label="Primary navigation" className="landing-nav">
+          <a className="brand" href="#top" aria-label="GrannySmith home">
+            <span className="brand-mark">GS</span>
+            <span>GrannySmith</span>
+          </a>
+          <div className="nav-links">
+            <a href="#lab">Live lab</a>
+            <a href="#results">Evidence</a>
+            <a href="#safety">Safety</a>
+          </div>
+          <a className="nav-cta" href="#lab">
+            Start testing <ArrowRight size={15} />
+          </a>
+        </nav>
+
+        <div className="hero-layout" id="top">
+          <div className="hero-copy">
+            <p className="eyebrow"><Sparkles size={14} /> Synthetic usability lab</p>
+            <h1>
+              <span className="hero-title-line">Watch real-world</span>{" "}
+              <span className="hero-title-line">personas</span>{" "}
+              <em>test every path.</em>
+            </h1>
+            <p className="hero-description">
+              Four computer-use agents explore your product as different people. See where they
+              hesitate, backtrack, and succeed—then turn their evidence into a prioritized report.
+            </p>
+            <div className="hero-form" id="start">
+              <a className="hero-start-button" href="#lab">
+                <Play size={17} /> Open the live lab <ArrowRight size={16} />
+              </a>
+              <p><ShieldCheck size={14} /> Plan personas, dispatch H agents, inspect hotspots, and export the report.</p>
+            </div>
+            <div className="hero-proof">
+              <div className="proof-avatars" aria-hidden="true">
+                <span>L</span><span>R</span><span>M</span><span>J</span>
+              </div>
+              <div>
+                <div className="proof-stars" aria-label="Five stars">★★★★★</div>
+                <p>Four perspectives. One evidence-backed report.</p>
+              </div>
+            </div>
+          </div>
+
+          <AnimatedAgentJourney snapshot={snapshot} />
+        </div>
+
+        <div className="signal-bridge" aria-label="Live trajectory becomes an evidence-backed report">
+          <div className="signal-bridge-copy">
+            <span>Live observation</span>
+            <i aria-hidden="true" />
+            <span>Normalized evidence</span>
+            <i aria-hidden="true" />
+            <strong>Product decision</strong>
+          </div>
+          <div className="signal-bridge-metrics">
+            <span><b>04</b> personas</span>
+            <span><b>{snapshot.sessions.reduce((total, session) => total + session.stepCount, 0)}</b> actions watched</span>
+            <span><b>{visualHotspots.length}</b> shared signals</span>
+          </div>
+        </div>
+      </section>
+
+    <main className="lab-shell min-h-screen bg-paper px-5 py-16 text-ink md:px-8" id="lab">
       <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.92fr_1.08fr]">
         <div className="flex flex-col gap-6">
           <div>
@@ -580,7 +646,7 @@ export default function Home() {
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-ink/60">
                   Computer Use Hackathon
                 </p>
-                <h1 className="text-2xl font-black">GrannySmith</h1>
+                <p className="text-2xl font-black">GrannySmith</p>
               </div>
             </div>
 
@@ -789,7 +855,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mx-auto mt-6 grid max-w-7xl gap-4 md:grid-cols-3">
+      <section className="mx-auto mt-6 grid max-w-7xl gap-4 md:grid-cols-3" id="results">
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <ShieldCheck className="mb-4 text-mint" />
           <p className="text-3xl font-black">{report?.score ?? 0}/100</p>
@@ -1038,6 +1104,11 @@ export default function Home() {
         </section>
       ) : null}
     </main>
+    <footer className="landing-footer" id="safety">
+      <span>GrannySmith</span>
+      <p>Synthetic usability benchmark—not a replacement for human research or accessibility certification.</p>
+    </footer>
+    </>
   );
 }
 
