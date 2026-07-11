@@ -28,7 +28,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    if(eventsMode){const events=await getHCompanySessionEvents(sessionId,personaId);return ok(events.filter(e=>e.cursor>after),{mode:"h-company-events",cursor:events.at(-1)?.cursor??after})}
+    if (eventsMode) {
+      const batch = await getHCompanySessionEvents(sessionId, personaId, after);
+      return ok(batch.events, {
+        mode: "h-company-changes",
+        cursor: batch.cursor,
+      });
+    }
     return ok(await getHCompanySessionStatus(sessionId, personaId), {
       mode: "h-company",
     });

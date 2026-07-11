@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import Image from "next/image";
 import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
@@ -84,7 +85,7 @@ type LocalizeHotspotsPayload = {
   };
   error?: { message?: string };
 };
-type AgentRuntimeEvent={id:string;sessionId:string;personaId:string;cursor:number;step:number;createdAt:string;type:"narration"|"research"|"frustration";text?:string;category?:"navigation"|"clarity"|"feedback"|"recovery"|"trust"|"accessibility"|"technical";severity?:1|2|3|4|5;observation?:string;visibleEvidence?:string;currentUrl?:string;recommendation?:string};
+type AgentRuntimeEvent={id:string;sessionId:string;personaId:string;cursor:number;step:number;createdAt:string;type:"viewport"|"narration"|"research"|"frustration";imageUrl?:string;text?:string;category?:"navigation"|"clarity"|"feedback"|"recovery"|"trust"|"accessibility"|"technical";severity?:1|2|3|4|5;observation?:string;visibleEvidence?:string;currentUrl?:string;recommendation?:string};
 
 const TERMINAL_STATUSES = new Set<NormalizedSession["status"]>([
   "completed",
@@ -228,6 +229,7 @@ export default function Home() {
     snapshot.sessions[0];
   const liveNarration = [...liveEvents].reverse().find((event) => event.type === "narration" && event.personaId === selectedPersona?.id);
   const liveFrustration = [...liveEvents].reverse().find((event) => event.type === "frustration" && event.personaId === selectedPersona?.id);
+  const liveViewport = [...liveEvents].reverse().find((event) => event.type === "viewport" && event.personaId === selectedPersona?.id && event.imageUrl);
   const hasLiveNarration = Boolean(liveNarration?.text);
   const selectedNarration =
     liveNarration?.text ??
@@ -430,8 +432,17 @@ export default function Home() {
       const incoming = batches.flat();
       if (incoming.length === 0) return;
       setLiveEvents((current) => {
-        const known = new Set(current.map((event) => event.id));
-        return [...current, ...incoming.filter((event) => !known.has(event.id))];
+        const viewportPersonas = new Set(
+          incoming
+            .filter((event) => event.type === "viewport")
+            .map((event) => event.personaId),
+        );
+        const retained = current.filter(
+          (event) =>
+            event.type !== "viewport" || !viewportPersonas.has(event.personaId),
+        );
+        const known = new Set(retained.map((event) => event.id));
+        return [...retained, ...incoming.filter((event) => !known.has(event.id))];
       });
 
       for (const event of incoming) {
@@ -1943,23 +1954,40 @@ export default function Home() {
               <div className="agent-stage">
                 <div className="browser-bar">
                   <i /><i /><i />
-                  <span>{snapshot.url}</span>
+                  <span>{liveViewport?.currentUrl ?? snapshot.url}</span>
                   <b>{selectedSession?.status ?? "queued"}</b>
                 </div>
                 <div className="browser-screen">
-                  <span className="frame-mode">{replayMode ? "Evidence replay" : "Live session"}</span>
-                  <div className="screen-nav"><span /><span /><span /></div>
-                  <div className="screen-copy">
-                    <i />
-                    <i />
-                    <i />
-                    <button type="button">Primary action</button>
-                  </div>
-                  <HotspotLayer
-                    hotspots={visualHotspots.filter((hotspot) => hotspot.personaId === selectedPersona?.id)}
-                    onSelect={handleHotspotSelect}
-                  />
-                  <div className="agent-cursor">↖</div>
+                  <span className="frame-mode">{liveViewport ? "Exact H viewport · live frames" : replayMode ? "Evidence replay" : "Waiting for H viewport"}</span>
+                  {liveViewport?.imageUrl ? (
+                    <Image
+                      alt={`Live H Company browser for ${selectedPersona?.displayName ?? "agent"}`}
+                      className="agent-live-viewport"
+                      height={900}
+                      src={liveViewport.imageUrl}
+                      unoptimized
+                      width={1280}
+                    />
+                  ) : (
+                    <>
+                      <div className="screen-nav"><span /><span /><span /></div>
+                      <div className="screen-copy">
+                        <i />
+                        <i />
+                        <i />
+                        <button type="button">Primary action</button>
+                      </div>
+                    </>
+                  )}
+                  {!liveViewport ? (
+                    <>
+                      <HotspotLayer
+                        hotspots={visualHotspots.filter((hotspot) => hotspot.personaId === selectedPersona?.id)}
+                        onSelect={handleHotspotSelect}
+                      />
+                      <div className="agent-cursor">↖</div>
+                    </>
+                  ) : null}
                   <div className="thought-annotation">
                     <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
                     <blockquote>“{selectedNarration}”</blockquote>
@@ -1986,9 +2014,11 @@ export default function Home() {
                   <div>
                     <small>{runComplete ? "Evidence captured" : "H API status"} · {selectedSession?.stepCount ?? 0} steps</small>
                     <b>{selectedSession?.latestActionLabel ?? "Waiting to start"}</b>
-                    {!replayMode && !hasLiveNarration ? (
+                    {!replayMode ? (
                       <span className="live-feed-note">
-                        H has not published observation text through the REST events feed. Agent View is the exact live browser stream.
+                        {liveViewport
+                          ? "Rendering exact H browser frames as observation events arrive."
+                          : "Waiting for the first H browser frame. Agent View remains available while the agent is queued."}
                       </span>
                     ) : null}
                   </div>

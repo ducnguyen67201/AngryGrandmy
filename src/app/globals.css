@@ -150,6 +150,7 @@
 .browser-bar span { min-width: 0; margin-left: 5px; padding: 6px 10px; flex: 1; overflow: hidden; color: #7b8381; border-radius: 6px; background: white; text-overflow: ellipsis; white-space: nowrap; }
 .browser-bar b { color: #2b8c68; text-transform: capitalize; }
 .browser-screen { height: 385px; position: relative; overflow: hidden; background: linear-gradient(135deg, #fbfcfc, #eef2f1); }
+.agent-live-viewport { width: 100%; height: 100%; display: block; object-fit: contain; background: #f7f8f8; }
 .screen-nav { height: 52px; padding: 0 26px; display: flex; align-items: center; gap: 20px; border-bottom: 1px solid #e6e9e8; background: white; }
 .screen-nav span { width: 72px; height: 8px; border-radius: 8px; background: #dce1df; }
 .screen-nav span:first-child { width: 38px; margin-right: auto; background: #313b39; }
