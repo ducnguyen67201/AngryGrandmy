@@ -49,6 +49,7 @@ type VoiceReactionPayload = {
     source: "gradium" | "text";
     audioUrl: string | null;
     audioBase64: string | null;
+    audioMime: string | null;
     transcript: string;
   };
   error?: { message?: string };
@@ -512,7 +513,7 @@ export default function Home() {
       const audioSrc = payload.data.audioUrl
         ? payload.data.audioUrl
         : payload.data.audioBase64
-          ? `data:audio/mpeg;base64,${payload.data.audioBase64}`
+          ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
           : null;
 
       if (audioSrc) {
