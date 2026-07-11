@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRuntimeEvent } from "./agent-events";
-import { getAgentCursorForFrame } from "./agent-cursor";
+import { buildDemoCursorFallback, getAgentCursorForFrame } from "./agent-cursor";
 
 function event(
   id: string,
@@ -53,5 +53,22 @@ describe("agent cursor replay", () => {
       frameCursor: 4,
       fallback: null,
     })).toBeNull();
+  });
+
+  it("builds a bounded moving fallback path for legacy demo replays", () => {
+    const first = buildDemoCursorFallback(0, 10);
+    const middle = buildDemoCursorFallback(5, 10);
+
+    expect(first).not.toEqual(middle);
+    expect([first, middle]).toEqual([
+      expect.objectContaining({ id: "demo-cursor-0", x: expect.any(Number), y: expect.any(Number) }),
+      expect.objectContaining({ id: "demo-cursor-5", x: expect.any(Number), y: expect.any(Number) }),
+    ]);
+    for (const point of [first, middle]) {
+      expect(point.x).toBeGreaterThanOrEqual(12);
+      expect(point.x).toBeLessThanOrEqual(88);
+      expect(point.y).toBeGreaterThanOrEqual(16);
+      expect(point.y).toBeLessThanOrEqual(82);
+    }
   });
 });
