@@ -7,6 +7,7 @@ import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
+  buildLiveVisualHotspots,
   buildVisualHotspots,
   summarizeHotspots,
   type VisualHotspot,
@@ -22,6 +23,7 @@ import {
   parseLabSearchParams,
   parsePersistedLabState,
   PERSISTED_LAB_STATE_KEY,
+  shouldRestorePersistedRun,
 } from "@/lib/persistence/lab-state";
 import {
   isTesterCount,
@@ -39,6 +41,7 @@ import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 import { getRunGuidance } from "@/lib/ui/run-guidance";
 import { buildPanelReviewItems } from "@/lib/ui/panel-review";
+import { getLiveViewportPresentation } from "@/lib/ui/live-viewport";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -197,6 +200,36 @@ export default function Home() {
     [snapshot.analysis, snapshot.sessions],
   );
   const visualHotspots = localizedHotspots ?? fallbackHotspots;
+  const liveHotspots = useMemo(
+    () =>
+      buildLiveVisualHotspots(
+        liveEvents.flatMap((event) =>
+          event.type === "frustration" &&
+          event.category &&
+          event.severity &&
+          event.observation &&
+          event.visibleEvidence &&
+          event.recommendation
+            ? [{
+                id: event.id,
+                personaId: event.personaId,
+                step: event.step,
+                category: event.category,
+                severity: event.severity,
+                observation: event.observation,
+                visibleEvidence: event.visibleEvidence,
+                recommendation: event.recommendation,
+              }]
+            : [],
+        ),
+        snapshot.analysis,
+      ),
+    [liveEvents, snapshot.analysis],
+  );
+  const displayedHotspots = useMemo(() => {
+    const liveIds = new Set(liveHotspots.map((hotspot) => hotspot.id));
+    return [...liveHotspots, ...visualHotspots.filter((hotspot) => !liveIds.has(hotspot.id))];
+  }, [liveHotspots, visualHotspots]);
   const hotspotCounts = useMemo(
     () => summarizeHotspots(visualHotspots),
     [visualHotspots],
@@ -230,6 +263,13 @@ export default function Home() {
   const liveNarration = [...liveEvents].reverse().find((event) => event.type === "narration" && event.personaId === selectedPersona?.id);
   const liveFrustration = [...liveEvents].reverse().find((event) => event.type === "frustration" && event.personaId === selectedPersona?.id);
   const liveViewport = [...liveEvents].reverse().find((event) => event.type === "viewport" && event.personaId === selectedPersona?.id && event.imageUrl);
+  const selectedHotspots = displayedHotspots.filter(
+    (hotspot) => hotspot.personaId === selectedPersona?.id,
+  );
+  const liveViewportPresentation = getLiveViewportPresentation({
+    hasLiveViewport: Boolean(liveViewport),
+    hotspotCount: selectedHotspots.length,
+  });
   const hasLiveNarration = Boolean(liveNarration?.text);
   const selectedNarration =
     liveNarration?.text ??
@@ -264,7 +304,7 @@ export default function Home() {
       window.localStorage.getItem(PERSISTED_LAB_STATE_KEY),
     );
 
-    if (saved && !hasQueryState) {
+    if (saved && shouldRestorePersistedRun(saved, queryState)) {
       setSnapshot(saved.snapshot);
       setTargetUrl(saved.targetUrl);
       setObjective(saved.objective);
@@ -1968,7 +2008,7 @@ export default function Home() {
                       unoptimized
                       width={1280}
                     />
-                  ) : (
+                  ) : liveViewportPresentation.showSyntheticScaffold ? (
                     <>
                       <div className="screen-nav"><span /><span /><span /></div>
                       <div className="screen-copy">
@@ -1979,14 +2019,14 @@ export default function Home() {
                       </div>
                     </>
                   )}
-                  {!liveViewport ? (
-                    <>
-                      <HotspotLayer
-                        hotspots={visualHotspots.filter((hotspot) => hotspot.personaId === selectedPersona?.id)}
-                        onSelect={handleHotspotSelect}
-                      />
-                      <div className="agent-cursor">↖</div>
-                    </>
+                  {liveViewportPresentation.showHotspotOverlay ? (
+                    <HotspotLayer
+                      hotspots={selectedHotspots}
+                      onSelect={handleHotspotSelect}
+                    />
+                  ) : null}
+                  {liveViewportPresentation.showSyntheticScaffold ? (
+                    <div className="agent-cursor">↖</div>
                   ) : null}
                   <div className="thought-annotation">
                     <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>

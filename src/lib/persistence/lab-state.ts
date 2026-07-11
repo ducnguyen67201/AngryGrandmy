@@ -69,6 +69,25 @@ export function buildLabSearchParams({
   return `?${params.toString()}`;
 }
 
+export function shouldRestorePersistedRun(
+  persisted: PersistedLabState,
+  query: LabSearchState,
+): boolean {
+  if (
+    query.targetUrl &&
+    new URL(query.targetUrl).href !== new URL(persisted.targetUrl).href
+  ) {
+    return false;
+  }
+  if (query.objective && query.objective.trim() !== persisted.objective.trim()) {
+    return false;
+  }
+  if (query.testerCount && query.testerCount !== persisted.testerCount) {
+    return false;
+  }
+  return true;
+}
+
 export function buildPersistedLabState({
   snapshot,
   targetUrl,
