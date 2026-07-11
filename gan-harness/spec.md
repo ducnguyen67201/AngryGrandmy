@@ -1,38 +1,46 @@
-# GrannySmith production animation brief
+# Brief: make GrannySmith radically simpler
 
-Elevate the existing GrannySmith landing page into a production-scale, design-award-caliber animated product experience while preserving its synthetic usability-testing story and existing demo data.
+The current UI is still too dense. Redesign it so a first-time user immediately understands and completes this flow:
 
-## Product story
+1. Enter a website and a short use case.
+2. Analyze and receive suggested target-user personas, with an optional custom persona such as a grandma.
+3. Choose how many testers to run.
+4. Dispatch and observe the test.
+5. Watch one persona use the product while speaking aloud; see live H Company state, a direct session link, heatmap/frustration signals, and a compact path to a coding-agent fix proposal.
 
-GrannySmith releases four computer-use personas into an authorized product, watches their live screenshot trajectories, gives their friction a voice, and returns evidence-backed product recommendations.
+## Core design constraint
+
+Only show the controls needed for the current step. Setup and live monitoring must not appear side-by-side. The active task should fit comfortably in one viewport at 1440×900 without feeling like a dashboard.
+
+## Desired interaction model
+
+- Before analysis: one calm, centered launch card containing URL, use case, and one primary action.
+- After analysis: replace the launch card with a compact persona picker; custom persona creation is collapsed by default.
+- During/after dispatch: replace setup with the live test room; keep a small “New test” action.
+- Show one selected agent viewport, not four large agent cards.
+- A slim persona switcher may sit beside or below the viewport.
+- Frustration and spoken thought should feel like annotations on the live session, not separate report panels.
+- Hide report/export details until the run completes; keep them compact.
 
 ## Visual direction
 
-- Preserve the dark midnight, electric blue, violet, mint, amber, and coral identity.
-- Make the experience feel authored and cinematic rather than template-like.
-- Treat the hero journey as a living system: independent in-window cursors, ambient depth, purposeful sequencing, and clear cause-and-effect.
-- Push scale with layered spatial composition, premium typography, restrained glow, high-contrast data moments, and tactile microinteractions.
-- Do not copy TraceView branding or exact composition.
+Quiet, editorial, product-grade. Warm off-white background, near-black type, restrained mint signal color, occasional violet for AI actions. Strong typography and generous negative space. No giant marketing hero, no dense explanatory copy, no repeated headings, no nested cards inside cards, and no long forms visible before they are needed.
 
-## Required production qualities
+## Preserve
 
-- Strong desktop composition at 1440×900 and deliberate mobile composition at 390×844.
-- Motion should communicate state, hierarchy, and progress—not become visual noise.
-- Respect `prefers-reduced-motion` and keep content usable without animation.
-- Maintain semantic navigation, headings, form labels, and meaningful live-region/trajectory labels.
-- Avoid external tracking, credentials, private data, and unnecessary dependencies.
-- Keep the existing deterministic report/demo contract ready for future live H Company events.
-- No broken layout, horizontal overflow, unreadably small essential text, or animation-driven content loss.
-- Do not run `pnpm build` while the development server is active; this corrupts the shared `.next` output. Stop dev first for production build verification, then restart it.
-
-## Creative ambition
-
-The landing page should feel like a control room for autonomous UX research, not a collection of SaaS cards. Seek one memorable visual signature that belongs specifically to GrannySmith. A visually bold partial leap is preferable to a generic but feature-complete redesign.
+- Existing API behavior and safety authorization.
+- Persona suggestion/custom persona capability.
+- Tester count selection.
+- H Company session status and Agent View link.
+- Gradium voice action.
+- Heatmap/friction markers.
+- Fix brief interaction.
+- Responsive and accessible behavior.
 
 ## Acceptance
 
-- The animated hero explains the product within five seconds.
-- Each browser window visibly feels computer-controlled.
-- The transition from live trajectory to evidence/report feels like one continuous narrative.
-- Desktop and mobile both feel intentionally art-directed.
-- Weighted evaluator score reaches at least 7.5/10.
+- The first screen has no more than one heading, one short supporting sentence, two inputs, presets, permission, and one primary button.
+- Custom persona fields are hidden until requested.
+- The live screen does not show the setup form.
+- The primary flow works in Playwright replay mode.
+- Visual hierarchy is obvious within five seconds.

@@ -1,48 +1,75 @@
-# GAN design evaluation — iteration 1
+# Iteration 1 design evaluation
 
-## Screenshot sizes inspected
+## Verdict
 
-- Desktop viewport: 1440×900 (`iteration-1-desktop.png`), plus a 1440×2151 full-page capture (`iteration-1-desktop-full.png`).
-- Desktop reduced motion: 1440×900 (`iteration-1-desktop-reduced.png`).
-- Mobile viewport: 390×844 (`iteration-1-mobile.png`), plus a 390×3372 full-page capture (`iteration-1-mobile-full.png`).
-- Compared against the 1440px-wide `baseline-desktop.png` where useful.
-- Motion was observed over 2.5 seconds: 27 animations were running and the live trajectory advanced from step 4 to step 6.
+**Weighted score: 7.24/10 — does not pass the 7.5 threshold.**
 
-## Scores
+This is a substantial improvement over the supplied screenshot: setup, persona selection, and monitoring are now mutually exclusive scenes; the first screen fits at 1440×900 and 390×844 without scrolling; and the custom persona form is collapsed. The result is genuinely calmer. It is not yet design-award quality because the live experience is still a conventional dashboard composition wrapped around a generic fake browser, and mobile turns the observatory into a 1,602 px report stack.
 
 | Category | Score | Weight | Contribution |
 | --- | ---: | ---: | ---: |
-| Design Quality | 8.0 / 10 | 0.35 | 2.800 |
-| Originality | 7.2 / 10 | 0.30 | 2.160 |
-| Craft | 6.7 / 10 | 0.25 | 1.675 |
-| Functionality | 6.5 / 10 | 0.10 | 0.650 |
+| Design Quality | 7.8 | 0.35 | 2.73 |
+| Originality | 6.7 | 0.30 | 2.01 |
+| Craft | 7.2 | 0.25 | 1.80 |
+| Functionality | 7.0 | 0.10 | 0.70 |
+| **Total** |  |  | **7.24** |
 
-Weighted total: 7.29 / 10
+## What works
 
-## Award-level verdict
+- Progressive disclosure is now unmistakable. Setup disappears before persona selection, and both disappear in the live room.
+- The launch scene has a single focal point, one short sentence, two inputs, presets, permission, and one primary action. Its measured document height is exactly 900 px at 1440×900 and 844 px at 390×844.
+- The editorial serif display face, off-white field, small violet kicker, mint status, and restrained borders feel cohesive and significantly less tool-like.
+- Persona selection is compact and understandable. “Add someone specific — e.g. my grandma” is visible without exposing the form.
+- The desktop live screen keeps one agent viewport dominant and integrates thoughts/frustration more tightly than the old multi-card wall.
+- Manual replay interaction succeeded for analyze, dispatch, persona selection, voice control visibility, heatmap visibility, and fix-agent control, with all provider keys explicitly unset.
 
-**Not yet.** This is a substantial improvement over the baseline and already looks polished enough for a strong product launch. The desktop hero communicates the product quickly, and the central friction-capture prism is the beginning of a memorable GrannySmith-specific visual language. However, an award-level submission cannot ship a reduced-motion hydration failure, rely on 5.5–8px text for its core mobile product story, or leave the primary CTA visibly inert. Below the hero, the experience also falls back toward familiar SaaS score cards and split testimonial/recommendation sections instead of fully extending the trajectory system into a singular narrative.
+## Main issues
 
-## Three strongest decisions
+### 1. The live surface still looks like a dashboard, not an observatory
 
-1. **The trajectory stage now reads as an authored control room.** Independent persona-colored cursors, branching routes, status chips, live steps, and the central friction-capture prism explain computer-use observation within five seconds.
-2. **The desktop composition has confident hierarchy and restraint.** The oversized grotesk/serif headline pairing, controlled glow, dense right-side stage, and quiet left-side conversion area feel intentional rather than template-generated.
-3. **The fold transition is effective.** The `LIVE OBSERVATION → NORMALIZED EVIDENCE → PRODUCT DECISION` rail connects the dark live lab to the light evidence section and gives the full page a useful narrative spine.
+The desktop composition is a familiar two-column admin layout: browser mock on the left, stacked “Testers / Speaking aloud / Frustration signal” modules on the right, then a KPI strip below. It is clean, but not original. The rubric asks for thoughts, heatmap, and fixes to feel like annotations on the live session; here they remain separately boxed report regions.
 
-## Prioritized improvements
+The browser content is also generic skeleton UI with a “Primary action” button. That weakens the core promise of direct H Company evidence. The user asked to see what agents are actually running; a stylized placeholder makes the most important area feel simulated even when the surrounding status says live.
 
-1. **Fix reduced-motion rendering before any visual refinement.** With `prefers-reduced-motion: reduce`, the page emits a Motion warning and a React hydration error because the server and client render different SVG trees (`<g>` versus `<circle>`). Keep one stable DOM/SVG tree and disable motion through values/CSS after hydration. The reduced mode correctly reaches zero running animations, but it currently shows a Next.js issue overlay and is not production-safe.
-2. **Art-direct the mobile trajectory instead of scaling the desktop control room.** The mobile stage fits without horizontal overflow, but essential window/status/quote text is only 5.5–8px and the live-step panel crowds the screenshots. Use a focused step carousel, one large active browser window with adjacent peeks, or a vertical persona sequence so the computer-use behavior remains legible at 390px.
-3. **Create a clearer motion hierarchy.** Twenty-seven simultaneous animations and a two-step advance in 2.5 seconds make the stage feel continuously busy rather than causally choreographed. Slow the narrative beat, spotlight one active persona at a time, then let its cursor action trigger the prism, observation, route propagation, and next step in sequence.
-4. **Make the primary CTA visibly functional.** `Release the panel` is a valid labeled form button, but clicking it produces no route, status, live-region update, or visual state change. For the deterministic demo, clicking should at least launch/restart the trajectory, update the CTA to a running state, and move focus or scroll to the active observation.
-5. **Carry the prism/trajectory signature through the evidence sections.** The hero is distinctive, but the white three-card score row and lower split section are familiar SaaS patterns. Let route colors resolve into shared signals, have the prism refract into the 65/100 score, or use trajectory fragments as evidence provenance so the report feels generated by the live system rather than appended beneath it.
+### 2. Mobile is still too much
 
-## Functionality, accessibility, overflow, and console defects
+The live document is 1,602 px tall at 390×844. After the viewport, all four testers, spoken thought, frustration, score, hotspot count, recommendation, exports, replay status, and legal footer are stacked in full. This recreates the density problem vertically. Only the current agent and current evidence should be expanded; peers and completed-report details need compact, progressive disclosure.
 
-- **Console:** normal-motion desktop produced no warnings or errors. Reduced-motion load produced one Motion warning and one React hydration `pageerror`.
-- **Reduced motion:** zero animations remained after load and content stayed visible, but the hydration mismatch makes this mode defective.
-- **Overflow:** no horizontal overflow at 1440×900 or 390×844. Full page heights were 2151px desktop and 3372px mobile.
-- **Legibility:** the mobile journey contains essential text as small as 5.5px; multiple window labels and the persona observation are 6–8px.
-- **Primary usability:** navigation, the labeled URL field, and mobile CTA hit areas remain usable. `Release the panel` has no observable action or feedback.
-- **Semantics:** the page retains a semantic `h1`, `nav`, labeled URL input, and an `aria-label` on the live trajectory region.
-- **Verification:** 16/16 tests passed; TypeScript and ESLint passed. Production build was not run because the shared development server was active, per the harness constraint.
+The selected agent does not remain the focal point once the user scrolls. The four-person list consumes a large block even though a horizontal avatar rail or compact dropdown would do the job.
+
+### 3. Evidence hierarchy is internally inconsistent
+
+The run is labeled “Run complete,” but the experience still offers “Hear with Gradium” and “Spawn fix agent” as if it were live. That can be valid, but the UI does not distinguish replay/post-run actions from real-time observation.
+
+“Ready to dispatch” remains in the desktop header after the run is complete. This is stale state and visibly contradicts the run heading.
+
+The result strip is shown immediately after completion and competes with the live surface. The brief says report/export details should remain hidden until completion and compact; the timing is correct, but all metrics and exports are still expanded by default.
+
+### 4. Some interaction craft is under-specified
+
+- Persona cards visually indicate selection but do not expose `aria-pressed` or a radio-group relationship.
+- The custom persona affordance is clear visually, but the suggested persona cards use checkmarks that imply all four are individually selected while tester count separately determines how many run. The relationship between card selection and count is ambiguous.
+- Provider badges are decorative labels rather than useful live-state indicators. “H Company” should communicate connected/running/replay, and the Agent View link should remain visible even when the selected action label is long.
+- The persistent mock-build status and repeated authorization footer add low-value text after the user has already granted permission.
+
+### 5. Automated flow verification is currently stale
+
+`BASE_URL=http://127.0.0.1:3105 pnpm exec playwright test tests/e2e/run-flow.spec.ts --reporter=line` failed because the test still expects the removed `Usability test workflow` list. The manual replay flow works, but the acceptance criterion explicitly requires Playwright replay mode, so this iteration cannot receive full functionality credit until the E2E contract matches the new progressive-disclosure UI.
+
+## Prioritized changes for iteration 2
+
+1. **Turn evidence into overlays on the session.** Place the spoken thought as a small anchored caption near the cursor/current action and render frustration as an expandable hotspot callout on the viewport. Replace the permanent right-side thought/frustration modules with one slim timeline or evidence rail.
+2. **Make the live viewport credible.** Use the real Agent View/embed/screenshot when available. In replay, label the frame explicitly as “Replay” and use a recognizable product-specific capture rather than a neutral skeleton.
+3. **Collapse mobile aggressively.** Use a horizontal tester rail, show only the selected tester’s thought, and collapse the completed score/fix/export area behind one “View findings” control. Target no more than roughly 1.2 viewports before the primary live evidence and its action are fully understood.
+4. **Resolve state contradictions.** Header status should read “Run complete” after replay completion; provider chips should expose live/replay state; post-run voice/fix actions should be framed as review actions.
+5. **Clarify tester selection.** Either make persona cards true multi-select controls and derive the count, or present them as an ordered suggested roster with the first N visibly included. Add accessible selection semantics.
+6. **Remove low-value copy.** Hide the mock-first implementation note from the user-facing UI and avoid repeating the permission disclaimer on every scene.
+7. **Update the E2E test** to assert the three exclusive scenes and verify that setup is absent in the live room, then cover the collapsed custom persona flow and mobile overflow.
+
+## Pass criteria for the next iteration
+
+- Desktop retains the calm, single-scene setup and persona screens.
+- Live thoughts and frustration are perceived as part of the observed session, not as report cards beside it.
+- Mobile no longer expands the entire tester list and completed report by default.
+- Live/replay/completed state is consistent in every status label.
+- The revised Playwright replay test passes with provider keys unset.

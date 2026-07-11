@@ -1,50 +1,67 @@
-# GAN design evaluation — iteration 2
+# Iteration 2 design evaluation
 
-## Screenshot sizes inspected
+## Verdict
 
-- Desktop viewport: 1440×900 (`iteration-2-desktop.png`), plus a 1440×2165 full-page capture (`iteration-2-desktop-full.png`).
-- Desktop reduced motion: 1440×900 (`iteration-2-desktop-reduced.png`).
-- Mobile viewport: 390×844 (`iteration-2-mobile.png`), plus a 390×3525 full-page capture (`iteration-2-mobile-full.png`).
-- Mobile reduced motion: 390×844 (`iteration-2-mobile-reduced.png`).
-- Mobile launched state: 390×844 (`iteration-2-mobile-cta.png`).
-- Compared against iteration 1 at the same viewport sizes.
-- Motion was observed over 2.5 seconds: the initial active animation count fell from 27 in iteration 1 to 11 in iteration 2, and the trajectory advanced only one step instead of two.
+**Weighted score: 8.38/10 — passes the 7.5 threshold.**
 
-## Scores
+Iteration two resolves the core density and interaction-model problems. Setup, persona selection, and observation are exclusive scenes; the live evidence is now composed directly on the observed viewport; completed findings are collapsed; and the full mobile live scene measures 853 px at 390×844 instead of the previous 1,602 px. The result feels like a focused usability observatory rather than a collection of report panels.
 
 | Category | Score | Weight | Contribution |
 | --- | ---: | ---: | ---: |
-| Design Quality | 8.3 / 10 | 0.35 | 2.905 |
-| Originality | 7.7 / 10 | 0.30 | 2.310 |
-| Craft | 8.2 / 10 | 0.25 | 2.050 |
-| Functionality | 8.7 / 10 | 0.10 | 0.870 |
+| Design Quality | 8.5 | 0.35 | 2.98 |
+| Originality | 8.2 | 0.30 | 2.46 |
+| Craft | 8.1 | 0.25 | 2.03 |
+| Functionality | 9.2 | 0.10 | 0.92 |
+| **Total** |  |  | **8.38** |
 
-Weighted total: 8.14 / 10
+## Evidence
 
-## Award-level verdict
+- Desktop setup at 1440×900: document height 900 px, setup present, live room absent.
+- Desktop live at 1440×900: document height 907 px; setup and persona scenes absent; exactly one live room present.
+- Mobile setup at 390×844: document height 844 px with no horizontal overflow.
+- Mobile live at 390×844: document height 853 px and width 390 px; setup absent and exactly one live room present.
+- `BASE_URL=http://127.0.0.1:3106 HAI_API_KEY= OPENAI_API_KEY= GRADIUM_API_KEY= NVIDIA_API_KEY= pnpm exec playwright test tests/e2e/run-flow.spec.ts --reporter=line`: **2 passed**.
+- The revised tests explicitly verify setup/persona/live exclusivity, collapsed custom persona fields, suggested-roster semantics, replay mode, evidence overlays, compact findings, and mobile width.
 
-**Pass — credible award-gallery shortlist quality, though not yet an obvious category winner.** The redesign now clears the production bar that iteration 1 missed: normal and reduced-motion loads are console-clean, the mobile trajectory is intentionally reframed around one readable active browser, the CTA launches a visible deterministic sequence, and the motion has a discernible focus hierarchy. The central prism, persona routes, and evidence provenance language make this more specific than a generic gradient SaaS landing page. The remaining gap is mostly one of singularity: the prism-to-report transformation is suggested through arcs and signal labels rather than becoming the unforgettable centerpiece of the entire page.
+## What improved
 
-## Three strongest decisions
+- Spoken thought and frustration are now contextual annotations inside the session surface. This is the biggest design improvement and gives the product a distinct point of view.
+- The horizontal persona rail preserves agent switching without competing with the viewport. On mobile it becomes a compact avatar strip.
+- “Evidence replay,” “H Company · replay,” “Gradium · review voice,” and “Run complete” clearly distinguish replay/review state from a live run. The stale “Ready to dispatch” contradiction is gone.
+- The completed result is reduced to a single score, “View findings,” and a friction count instead of an always-expanded report strip.
+- Persona cards now say “Included,” and the roster has accessible group semantics, making the tester-count relationship much clearer.
+- The mobile frame is notably strong: the selected persona, observed page, heatmap markers, spoken thought, frustration callout, current action, and findings affordance are all visible within roughly one viewport.
+- The editorial typography and restrained warm/mint/violet palette remain cohesive across all three scenes.
 
-1. **Mobile is now a composed narrative, not a scaled desktop diagram.** One active browser window, one current live step, and one persona observation occupy the stage at useful scale; inactive desktop complexity is removed. The core window text is now 10–11px instead of 5.5–8px, and the mission title remains 14px.
-2. **The motion hierarchy has real cause-and-effect.** Inactive windows dim, the active window and cursor take focus, the central friction capture remains the routing hinge, and the step cadence slows. This makes the animation feel observed rather than merely decorative.
-3. **The CTA and evidence transition now complete the story.** `Release the panel` restarts at step 1, scrolls mobile to the live stage, changes to `Restart trajectory`, focuses the stage, and announces `Panel released · four agents observing the demo`. The evidence section now receives the prism through a large arc and provenance labels on each score card.
+## Remaining issues
 
-## Prioritized improvements
+### 1. The replay viewport is still visibly synthetic
 
-1. **Make the prism-to-report transformation literal, not just atmospheric.** The large pale arc and top-edge card colors help, but the three white cards still read as a familiar SaaS metric row. Animate or diagram the four persona routes combining at the prism, then refracting into the 65/100 score, six shared hotspots, and four evidence replays with visible provenance.
-2. **Raise the last small mobile labels to production-readable sizes.** Core mobile narrative copy improved to 10–11px, but persona names remain 7px and the `Blocked` chip is 8px. These are secondary, yet 10–11px minimum would make the control-room details feel crafted instead of miniaturized.
-3. **Increase active-window legibility on desktop.** The wide composition is excellent, but browser UI and the key Joan quote remain mostly 7–8px. The phase spotlight could subtly enlarge the active window/observation while further reducing inactive detail, preserving the spatial map without asking viewers to decode tiny copy.
-4. **Tighten the final 15% of choreography.** The initial active animation count is much better, but it rises from 11 to 18 as the sequence progresses and all route systems remain visually present. Freeze inactive cursors completely and let each active click trigger a single unmistakable pulse into the prism before the next route wakes.
-5. **Give the lower recommendation section one interaction.** The focused quote and recommendations are visually strong but static. Hover/focus on a recommendation could illuminate the corresponding persona color, screenshot replay, or trajectory segment, completing the evidence chain without adding a new feature surface.
+The centered skeleton page and generic “Primary action” are visually clean, but they still do not resemble direct product evidence. The new “Evidence replay” label makes this honest, yet a product-specific replay capture would make the central promise much more credible. For live H Company sessions, the actual Agent View/screenshot should replace this surface whenever technically possible.
 
-## Functionality, accessibility, overflow, and console defects
+### 2. Mobile annotations compete at the smallest width
 
-- **Console and hydration:** no warnings, console errors, or page errors in desktop/mobile, normal/reduced-motion loads. The iteration-1 hydration mismatch is resolved.
-- **Reduced motion:** zero running or total animations at 1440×900 and 390×844; content remains present and the trajectory stays at a stable step 4.
-- **Overflow:** no horizontal overflow at 1440×900 or 390×844. Full-page heights were 2165px desktop and 3525px mobile.
-- **Mobile legibility:** visible core journey copy is 10–14px; remaining visible sub-10px text is limited to persona names/initials and the status chip. Hidden desktop-only nodes do not occupy layout.
-- **CTA:** launch behavior is now observable and accessible. On mobile it scrolls from the top to `scrollY 579`, restarts at step 1, changes to `Restart trajectory`, and updates an `aria-live` status.
-- **Semantics:** semantic navigation, `h1`, labeled URL input, live trajectory region, focus target, and live status remain intact.
-- **Verification:** 19/19 tests passed; TypeScript and ESLint passed. Production build was not run because the shared development server was active, per the harness constraint.
+At 390 px, the frustration callout covers much of the upper-right viewport and sits close to a heatmap marker, while the narration occupies most of the lower width. It is readable and still compact, but the underlying product can become secondary. Consider collapsing the non-selected annotation to a chip or letting the user toggle thought/frustration layers.
+
+### 3. A little implementation copy remains user-facing
+
+“Mock-first build: real H Company routes can swap in behind this contract” is internal implementation language and weakens the polished first impression. The authorization disclaimer is also repeated below a form that already contains the permission checkbox. Removing both would make the launch screen feel more intentional.
+
+### 4. Fine interaction polish could go further
+
+- The selected tester rail primarily communicates state through color and a subtle outline; a stronger accessible current marker would help.
+- Provider status pills are informative now, but the live H Company state and direct Agent View action should be verified visually with a real-session fixture, not only replay mode.
+- The desktop live page is 907 px tall at a 900 px viewport. The entire primary surface is effectively visible, but trimming a few pixels of shell spacing would eliminate the residual page scroll.
+- Opening completed findings should preserve the same compact visual discipline; the collapsed state is strong, but the expanded drawer/sheet deserves a dedicated visual regression assertion.
+
+## Recommended final polish
+
+1. Remove the mock-build note and repeated permission footer from the launch scene.
+2. Use a product-specific capture in replay and real Agent View evidence in live mode.
+3. Add annotation-layer toggles or auto-collapse behavior on narrow mobile screens.
+4. Trim desktop live spacing so the page height stays within 900 px.
+5. Add visual coverage for expanded findings and a real-session fixture with the Agent View link.
+
+## Final assessment
+
+This iteration passes. It is genuinely less dense, intuitive within five seconds, responsive, and visually distinctive. The remaining work is polish and evidence fidelity rather than another structural redesign.

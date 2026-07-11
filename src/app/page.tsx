@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
@@ -31,8 +31,8 @@ import type {
   UsabilityReport,
   VisualAgentState,
 } from "@/lib/schemas/run";
-import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
+import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 import { getRunGuidance } from "@/lib/ui/run-guidance";
 import { buildPanelReviewItems } from "@/lib/ui/panel-review";
@@ -82,6 +82,7 @@ type LocalizeHotspotsPayload = {
   };
   error?: { message?: string };
 };
+type AgentRuntimeEvent={id:string;sessionId:string;personaId:string;cursor:number;step:number;createdAt:string;type:"narration"|"research"|"frustration";text?:string;category?:"navigation"|"clarity"|"feedback"|"recovery"|"trust"|"accessibility"|"technical";severity?:1|2|3|4|5;observation?:string;visibleEvidence?:string;currentUrl?:string;recommendation?:string};
 
 const TERMINAL_STATUSES = new Set<NormalizedSession["status"]>([
   "completed",
@@ -125,7 +126,7 @@ const DEFAULT_OBJECTIVE =
   "Find the primary user workflow and stop before an irreversible action.";
 
 export default function Home() {
-  const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createDemoRun());
+  const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createInitialRun());
   const [targetUrl, setTargetUrl] = useState("https://demo-health.example");
   const [objective, setObjective] = useState(DEFAULT_OBJECTIVE);
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
@@ -142,11 +143,14 @@ export default function Home() {
   const [persistenceLine, setPersistenceLine] = useState("Restoring any saved lab run...");
   const [persistenceHydrated, setPersistenceHydrated] = useState(false);
   const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
+  const [fixRequestIds, setFixRequestIds] = useState<Set<string>>(() => new Set());
+  const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
   const pendingResultIds = useRef(new Set<string>());
   const lastReportKey = useRef<string | null>(null);
+  const liveEventCursors = useRef(new Map<string, number>());
   const liveMode = snapshot.phase === "running";
   const customPersonaCount =
     snapshot.analysis?.personas.filter((persona) => persona.id.startsWith("custom-")).length ?? 0;
@@ -157,7 +161,6 @@ export default function Home() {
     snapshot.phase === "revealing" &&
     snapshot.sessions.length === 0 &&
     Boolean(snapshot.analysis);
-  const panelFeedback = getPanelFeedback({ snapshot, loading, dispatching, testerCount });
   const activeSessions = useMemo(
     () =>
       snapshot.sessions.filter(
@@ -191,14 +194,14 @@ export default function Home() {
     liveMode,
     panelReady,
   });
+  const panelFeedback = getPanelFeedback({ snapshot, loading, dispatching, testerCount });
   const runGuidance = getRunGuidance({ snapshot, loading, dispatching });
   const panelReviewItems = useMemo(
-    () =>
-      buildPanelReviewItems({
-        analysis: snapshot.analysis,
-        testerCount,
-        selectedPersonaId: snapshot.selectedPersonaId,
-      }),
+    () => buildPanelReviewItems({
+      analysis: snapshot.analysis,
+      testerCount,
+      selectedPersonaId: snapshot.selectedPersonaId,
+    }),
     [snapshot.analysis, snapshot.selectedPersonaId, testerCount],
   );
   const sessionsByPersona = new Map(
@@ -211,11 +214,15 @@ export default function Home() {
     snapshot.sessions.find((session) => session.personaId === selectedPersona?.id) ??
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
     snapshot.sessions[0];
+  const liveNarration = [...liveEvents].reverse().find((event) => event.type === "narration" && event.personaId === selectedPersona?.id);
+  const liveFrustration = [...liveEvents].reverse().find((event) => event.type === "frustration" && event.personaId === selectedPersona?.id);
   const selectedNarration =
+    liveNarration?.text ??
     selectedSession?.finding?.frictionEvents[0]?.narratedObservation ??
     selectedSession?.finding?.summary ??
     selectedPersona?.introLine ??
     "No persona finding is ready yet.";
+  const selectedFriction = liveFrustration ? {step:liveFrustration.step,category:liveFrustration.category??"clarity",severity:liveFrustration.severity??3,observation:liveFrustration.observation??"Usability barrier",visibleEvidence:liveFrustration.visibleEvidence??"Live agent evidence",recommendation:liveFrustration.recommendation??"Remove this barrier",narratedObservation:liveFrustration.observation??"This is frustrating",recovered:false} : selectedSession?.finding?.frictionEvents[0] ?? null;
   const completedWithFindings = snapshot.sessions.filter(
     (session) => session.finding,
   ).length;
@@ -341,6 +348,9 @@ export default function Home() {
       window.clearInterval(interval);
     };
   }, [activeSessions, liveMode]);
+
+
+  useEffect(()=>{if(snapshot.sessions.length===0)return;let cancelled=false;async function poll(){const batches=await Promise.all(snapshot.sessions.map(async session=>{const after=liveEventCursors.current.get(session.sessionId)??0,query=new URLSearchParams({sessionId:session.sessionId,personaId:session.personaId,after:String(after),events:"1"});try{const response=await fetch(`/api/session-status?${query}`),payload=await response.json()as{data?:AgentRuntimeEvent[];meta?:{cursor?:number}};liveEventCursors.current.set(session.sessionId,payload.meta?.cursor??after);return payload.data??[]}catch{return[]}}));if(cancelled)return;const incoming=batches.flat();if(incoming.length===0)return;setLiveEvents(current=>{const known=new Set(current.map(event=>event.id));return[...current,...incoming.filter(event=>!known.has(event.id))]});for(const event of incoming){const persona=snapshot.analysis?.personas.find(item=>item.id===event.personaId),session=snapshot.sessions.find(item=>item.personaId===event.personaId);if(!persona||!session)continue;if(event.type==="narration"&&event.personaId===selectedPersona?.id&&event.text){const response=await fetch("/api/voice-reaction",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({personaId:persona.id,voiceSlot:persona.voiceSlot,text:event.text})}),payload=await response.json()as VoiceReactionPayload,audio=payload.data?.audioBase64?`data:${payload.data.audioMime??"audio/wav"};base64,${payload.data.audioBase64}`:payload.data?.audioUrl;if(audio)void new Audio(audio).play().catch(()=>undefined)}if(event.type==="frustration"){const friction={step:event.step,category:event.category??"clarity",severity:event.severity??3,observation:event.observation??"Barrier",visibleEvidence:event.visibleEvidence??"Live evidence",recommendation:event.recommendation??"Remove barrier",narratedObservation:event.observation??"This is frustrating",recovered:false};await fetch("/api/report?fixJob=1",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({runId:snapshot.id,sessionId:session.sessionId,personaId:persona.id,personaName:persona.displayName,productUrl:event.currentUrl??snapshot.url,objective:snapshot.objective??objective,frustrationEventId:event.id,frustration:friction})});setFixRequestIds(current=>new Set(current).add(event.id))}}}const timer=window.setInterval(poll,2500);void poll();return()=>{cancelled=true;window.clearInterval(timer)}},[objective,selectedPersona?.id,snapshot.analysis?.personas,snapshot.id,snapshot.objective,snapshot.sessions,snapshot.url]);
 
   useEffect(() => {
     if (!liveMode) return;
@@ -640,7 +650,20 @@ export default function Home() {
   }
 
   async function handleVoice() {
-    if (!selectedSession || !selectedPersona || voiceLoading) return;
+    if (!selectedPersona || voiceLoading) return;
+    await playPersonaVoice(
+      selectedPersona.id,
+      selectedPersona.voiceSlot,
+      selectedNarration,
+    );
+  }
+
+  async function playPersonaVoice(
+    personaId: string,
+    voiceSlot: 0 | 1 | 2 | 3,
+    text: string,
+  ) {
+    if (voiceLoading) return;
 
     setVoiceLoading(true);
     setVoiceLine("Preparing persona voice...");
@@ -650,9 +673,9 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          personaId: selectedPersona.id,
-          voiceSlot: selectedPersona.voiceSlot,
-          text: selectedNarration,
+          personaId,
+          voiceSlot,
+          text,
         }),
       });
       const payload = (await response.json()) as VoiceReactionPayload;
@@ -678,7 +701,7 @@ export default function Home() {
         setVoiceLine("Gradium fallback: browser voice spoke the finding.");
       }
     } catch (error) {
-      speakWithBrowser(selectedNarration);
+      speakWithBrowser(text);
       setVoiceLine(
         error instanceof Error
           ? `${error.message} Browser voice fallback used.`
@@ -717,7 +740,17 @@ export default function Home() {
     setDrawerOpen(true);
   }
 
-  return (
+  async function handleSpawnFixAgent() {
+    if (!selectedFriction || !selectedPersona || !selectedSession) return;
+    const requestId = `${selectedSession.sessionId}:final:${selectedFriction.step}`;
+    setStatusLine(`Spawning proposal agents for ${selectedPersona.displayName}.`);
+    const response = await fetch("/api/report?fixJob=1", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ runId:snapshot.id, sessionId:selectedSession.sessionId, personaId:selectedPersona.id, personaName:selectedPersona.displayName, productUrl:snapshot.url, objective:snapshot.objective ?? objective, frustrationEventId:requestId, frustration:selectedFriction }) });
+    if (response.ok) { setFixRequestIds((current) => new Set(current).add(requestId)); setStatusLine(`Fix proposal job queued for ${selectedPersona.displayName}.`); }
+    else setStatusLine("Could not start the fix proposal job.");
+  }
+
+  if (false) {
+    return (
     <>
       <section className="landing-hero">
         <nav aria-label="Primary navigation" className="landing-nav">
@@ -1426,8 +1459,8 @@ export default function Home() {
               Evidence
             </p>
             <div className="mt-3 grid gap-2">
-              {(selectedSession?.finding?.evidence.length
-                ? selectedSession.finding.evidence
+              {(selectedSession?.finding?.evidence?.length
+                ? selectedSession?.finding?.evidence ?? []
                 : ["Evidence will appear when the H session result is parsed."]
               ).map((item) => (
                 <p
@@ -1445,8 +1478,8 @@ export default function Home() {
               Friction Events
             </p>
             <div className="mt-3 grid gap-3">
-              {(selectedSession?.finding?.frictionEvents.length
-                ? selectedSession.finding.frictionEvents
+              {(selectedSession?.finding?.frictionEvents?.length
+                ? selectedSession?.finding?.frictionEvents ?? []
                 : []
               ).map((event) => (
                 <article
@@ -1488,7 +1521,7 @@ export default function Home() {
             {selectedSession?.agentViewUrl ? (
               <a
                 className="inline-flex min-h-10 items-center gap-2 rounded-md border border-ink/15 px-4 text-sm font-black text-ink"
-                href={selectedSession.agentViewUrl}
+                href={selectedSession.agentViewUrl ?? undefined}
                 rel="noreferrer"
                 target="_blank"
               >
@@ -1505,6 +1538,317 @@ export default function Home() {
       <p>Synthetic usability benchmark—not a replacement for human research or accessibility certification.</p>
     </footer>
     </>
+    );
+  }
+
+  const isLiveView = snapshot.sessions.length > 0 || snapshot.phase === "running" || snapshot.phase === "report";
+  const isPersonaView = Boolean(snapshot.analysis) && !isLiveView;
+  const selectedFixRequestId = selectedFriction && selectedSession
+    ? liveFrustration?.id ?? `${selectedSession.sessionId}:final:${selectedFriction.step}`
+    : null;
+  const fixReady = selectedFixRequestId ? fixRequestIds.has(selectedFixRequestId) : false;
+  const replayMode = selectedSession?.sessionId.startsWith("demo-") ?? false;
+  const runComplete = isLiveView && activeSessions.length === 0;
+
+  return (
+    <div className="simple-app">
+      <header className="simple-header">
+        <a className="simple-brand" href="#setup" aria-label="GrannySmith home">
+          <span>GS</span>
+          GrannySmith
+        </a>
+        <div className="simple-header-actions">
+        <div className="simple-header-status">
+          <span className={liveMode && !runComplete ? "is-live" : ""} />
+          {runComplete ? "Run complete" : liveMode ? "H agents live" : snapshot.analysis ? "Ready to dispatch" : "New test"}
+        </div>
+        {isLiveView ? (
+          <button
+            onClick={() => {
+              setSnapshot(createInitialRun());
+              setFixRequestIds(new Set());
+            }}
+            type="button"
+          >
+            New test
+          </button>
+        ) : null}
+        </div>
+      </header>
+
+      <main className="simple-shell">
+        {!snapshot.analysis && !isLiveView ? (
+        <section className="launch-scene" id="setup">
+          <div className="simple-intro">
+            <p className="simple-kicker">Synthetic user testing</p>
+            <h1>Who can use what you built?</h1>
+            <p>Enter a product and one thing a user should accomplish.</p>
+          </div>
+
+          <form className="simple-form" onSubmit={handlePlan}>
+            <div className="url-row">
+              <label htmlFor="target-url">Product URL</label>
+              <div>
+                <input
+                  id="target-url"
+                  onChange={(event) => setTargetUrl(event.target.value)}
+                  type="url"
+                  value={targetUrl}
+                />
+              </div>
+            </div>
+
+            <label className="use-case-field" htmlFor="objective">
+              Use case
+              <textarea
+                id="objective"
+                onChange={(event) => {
+                  setObjective(event.target.value);
+                  setSelectedPresetId(null);
+                }}
+                value={objective}
+              />
+            </label>
+
+            <div className="preset-row" aria-label="Example test presets">
+              <span>Try an example</span>
+              {DEMO_PRESETS.map((preset) => (
+                <button
+                  aria-pressed={selectedPresetId === preset.id}
+                  key={preset.id}
+                  onClick={() => {
+                    setSelectedPresetId(preset.id);
+                    setTargetUrl(preset.url);
+                    setObjective(preset.objective);
+                  }}
+                  type="button"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            <label className="permission-row">
+              <input
+                checked={authorized}
+                onChange={(event) => setAuthorized(event.target.checked)}
+                type="checkbox"
+              />
+              I own this site or have permission to test it.
+            </label>
+            <button className="analyze-button" disabled={loading || dispatching || !authorized} type="submit">
+              <Sparkles size={16} /> {loading ? "Finding target users…" : "Suggest target users"}
+            </button>
+          </form>
+        </section>
+        ) : null}
+
+        {isPersonaView ? (
+            <section className="persona-scene">
+              <div className="simple-section-heading">
+                <div>
+                  <p>Suggested for {snapshot.analysis?.productName}</p>
+                  <h1>Who should try it?</h1>
+                </div>
+              </div>
+
+              <div className="persona-cards" role="group" aria-label="Suggested tester roster">
+                {snapshot.analysis?.personas.map((persona, index) => (
+                  <button
+                    aria-label={`${persona.displayName}, ${index < testerCount || persona.id.startsWith("custom-") ? "included" : "standby"}. Preview persona`}
+                    aria-pressed={snapshot.selectedPersonaId === persona.id}
+                    className={snapshot.selectedPersonaId === persona.id ? "is-selected" : ""}
+                    key={persona.id}
+                    onClick={() => setSnapshot((current) => ({ ...current, selectedPersonaId: persona.id }))}
+                    type="button"
+                  >
+                    <span className={`persona-swatch swatch-${persona.visualVariant}`}>
+                      {persona.displayName.charAt(0)}
+                    </span>
+                    <span>
+                      <b>{persona.displayName}</b>
+                      <small>{persona.tagline} · {persona.digitalConfidence} confidence</small>
+                    </span>
+                    <em>{index < testerCount || persona.id.startsWith("custom-") ? <><Check size={13} /> Included</> : "Standby"}</em>
+                  </button>
+                ))}
+              </div>
+
+              <PersonaBuilder
+                disabled={loading || dispatching || liveMode}
+                onCreate={handleCreatePersona}
+              />
+
+              <div className="dispatch-row">
+                <div>
+                  <span>Testers</span>
+                  <div className="count-picker">
+                    {TESTER_COUNT_OPTIONS.map((count) => (
+                      <button
+                        aria-label={`Run ${count} testers`}
+                        aria-pressed={testerCount === count}
+                        key={count}
+                        onClick={() => setTesterCount(count)}
+                        type="button"
+                      >
+                        {count}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  className="dispatch-button"
+                  disabled={loading || dispatching || !authorized}
+                  onClick={handleLaunch}
+                  type="button"
+                >
+                  <Play size={17} />
+                  {dispatching ? "Dispatching…" : `Dispatch ${selectedTesterCount} testers`}
+                </button>
+              </div>
+              <button className="quiet-back" onClick={() => setSnapshot(createInitialRun())} type="button">← Change website</button>
+            </section>
+          ) : null}
+
+        {isLiveView && snapshot.analysis ? (
+          <section className="live-room" aria-labelledby="live-room-title">
+            <div className="live-room-heading">
+              <div>
+                <p><Activity size={14} /> {activeSessions.length ? `${activeSessions.length} agents running` : "Run complete"}</p>
+                <h1 id="live-room-title">Watching {selectedPersona?.displayName}</h1>
+              </div>
+              <div className="provider-badges">
+                <span><i className={runComplete ? "done" : "connected"} />H Company · {replayMode ? "replay" : runComplete ? "complete" : "connected"}</span>
+                <span>Gradium · review voice</span>
+              </div>
+            </div>
+
+            <div className="live-persona-dock" role="group" aria-label="Switch observed tester">
+              {snapshot.analysis.personas.map((persona) => {
+                const session = sessionsByPersona.get(persona.id);
+                return (
+                  <button
+                    aria-label={`Observe ${persona.displayName}: ${session?.latestActionLabel ?? "queued"}`}
+                    aria-pressed={snapshot.selectedPersonaId === persona.id}
+                    className={snapshot.selectedPersonaId === persona.id ? "is-active" : ""}
+                    key={persona.id}
+                    onClick={() => setSnapshot((current) => ({ ...current, selectedPersonaId: persona.id }))}
+                    type="button"
+                  >
+                    <span className={`persona-swatch swatch-${persona.visualVariant}`}>{persona.displayName.charAt(0)}</span>
+                    <b>{persona.displayName}</b>
+                    <i className={`state-${session?.visualState ?? "queued"}`} />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="live-layout">
+              <div className="agent-stage">
+                <div className="browser-bar">
+                  <i /><i /><i />
+                  <span>{snapshot.url}</span>
+                  <b>{selectedSession?.status ?? "queued"}</b>
+                </div>
+                <div className="browser-screen">
+                  <span className="frame-mode">{replayMode ? "Evidence replay" : "Live session"}</span>
+                  <div className="screen-nav"><span /><span /><span /></div>
+                  <div className="screen-copy">
+                    <i />
+                    <i />
+                    <i />
+                    <button type="button">Primary action</button>
+                  </div>
+                  <HotspotLayer
+                    hotspots={visualHotspots.filter((hotspot) => hotspot.personaId === selectedPersona?.id)}
+                    onSelect={handleHotspotSelect}
+                  />
+                  <div className="agent-cursor">↖</div>
+                  <div className="thought-annotation">
+                    <span><Volume2 size={12} /> {runComplete ? "Reviewing aloud" : "Thinking aloud"}</span>
+                    <blockquote>“{selectedNarration}”</blockquote>
+                    <button disabled={voiceLoading || !selectedPersona} onClick={handleVoice} type="button">
+                      {voiceLoading ? "Preparing…" : "Hear voice"}
+                    </button>
+                  </div>
+                  {selectedFriction ? (
+                    <div className="frustration-annotation">
+                      <span><AlertTriangle size={12} /> Frustration · {selectedFriction.severity}/5</span>
+                      <p>{selectedFriction.observation}</p>
+                      {fixReady ? (
+                        <small>
+                          <Check size={12} /> Fix brief ready
+                        </small>
+                      ) : (
+                        <button onClick={handleSpawnFixAgent} type="button"><Bot size={13} /> Propose fix</button>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="agent-action-bar">
+                  <span className="agent-avatar">{selectedPersona?.displayName.charAt(0) ?? "?"}</span>
+                  <div>
+                    <small>{runComplete ? "Evidence captured" : "Doing now"} · {selectedSession?.stepCount ?? 0} actions</small>
+                    <b>{selectedSession?.latestActionLabel ?? "Waiting to start"}</b>
+                  </div>
+                  {selectedSession?.agentViewUrl ? (
+                    <a href={selectedSession.agentViewUrl} rel="noreferrer" target="_blank">
+                      Open Agent View <ExternalLink size={13} />
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+
+              </div>
+          </section>
+        ) : null}
+
+        {isLiveView && report ? (
+          <details className="findings-disclosure" id="results">
+            <summary><span>{report.score}</span><b>View findings</b><small>{visualHotspots.length} friction signals</small></summary>
+          <section className="result-strip">
+            <div><small>Human-friendly score</small><b>{report.score}<span>/100</span></b></div>
+            <div><small>Frustration hotspots</small><b>{visualHotspots.length}</b></div>
+            <div className="result-recommendation"><small>Highest-impact fix</small><b>{report.topRecommendations[0]}</b></div>
+            <div className="export-actions">
+              <button onClick={handleCopySummary} type="button"><Clipboard size={15} /> Copy</button>
+              <button onClick={() => handleDownloadReport("markdown")} type="button"><Download size={15} /> Report</button>
+            </div>
+          </section>
+          </details>
+        ) : null}
+
+        {!isLiveView || dispatching ? <p className="simple-status" aria-live="polite">{statusLine}</p> : null}
+      </main>
+
+      {!isLiveView ? <footer className="simple-footer">
+        <ShieldCheck size={14} /> Only test products you own or have permission to evaluate.
+      </footer> : null}
+
+      {drawerOpen ? (
+        <div className="simple-drawer-backdrop" onClick={() => setDrawerOpen(false)}>
+          <aside className="simple-drawer" onClick={(event) => event.stopPropagation()}>
+            <button className="drawer-close" onClick={() => setDrawerOpen(false)} type="button">Close</button>
+            <p className="simple-kicker">Evidence</p>
+            <h2>{selectedPersona?.displayName}’s test</h2>
+            <div className="drawer-metrics">
+              <MetricTile label="Status" value={selectedSession?.status ?? "queued"} />
+              <MetricTile label="Actions" value={String(selectedSession?.stepCount ?? 0)} />
+            </div>
+            <h3>Task</h3>
+            <p>{selectedPersona?.task}</p>
+            <h3>What happened</h3>
+            <p>{selectedSession?.finding?.summary ?? selectedSession?.latestActionLabel ?? "Waiting for evidence."}</p>
+            {selectedFriction ? (
+              <div className="drawer-fix">
+                <b>Suggested fix</b>
+                <p>{selectedFriction.recommendation}</p>
+              </div>
+            ) : null}
+          </aside>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1559,6 +1903,20 @@ function markResultFailure(session: NormalizedSession): NormalizedSession {
     ...session,
     latestActionLabel: "Finished, but result extraction failed",
     errorCode: "provider_failure",
+  };
+}
+
+function createInitialRun(): RunSnapshot {
+  const demo = createDemoRun();
+  return {
+    ...demo,
+    id: "new-run",
+    phase: "idle",
+    analysis: null,
+    sessions: [],
+    selectedPersonaId: null,
+    report: null,
+    error: null,
   };
 }
 
