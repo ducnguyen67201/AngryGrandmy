@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
-import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, MousePointer2, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import {
@@ -56,6 +56,7 @@ import {
   mergeAgentRuntimeEvents,
   type AgentRuntimeEvent,
 } from "@/lib/runtime/agent-events";
+import { getAgentCursorForFrame } from "@/lib/runtime/agent-cursor";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -354,6 +355,14 @@ export default function Home() {
   const selectedHotspots = displayedHotspots.filter(
     (hotspot) => hotspot.personaId === selectedPersona?.id,
   );
+  const agentCursorPoint = selectedPersona
+    ? getAgentCursorForFrame({
+        events: liveEvents,
+        personaId: selectedPersona.id,
+        frameCursor: eventCursorLimit,
+        fallback: selectedHotspots.at(-1) ?? null,
+      })
+    : null;
   const liveViewportPresentation = getLiveViewportPresentation({
     hasLiveViewport: Boolean(liveViewport),
     hotspotCount: selectedHotspots.length,
@@ -2473,8 +2482,25 @@ export default function Home() {
                       onSelect={handleHotspotSelect}
                     />
                   ) : null}
-                  {liveViewportPresentation.showSyntheticScaffold ? (
-                    <div className="agent-cursor">↖</div>
+                  {agentCursorPoint ? (
+                    <div
+                      aria-label={`${selectedPersona?.displayName ?? "Agent"} cursor, ${agentCursorPoint.source === "agent" ? "reported by H" : "estimated from heatmap evidence"}`}
+                      className={`agent-cursor ${agentCursorPoint.source === "evidence" ? "is-estimated" : "is-reported"}`}
+                      style={{
+                        left: `${agentCursorPoint.x}%`,
+                        top: `${agentCursorPoint.y}%`,
+                      }}
+                    >
+                      <MousePointer2 aria-hidden="true" size={24} />
+                      <span>
+                        {selectedPersona?.displayName ?? "Agent"} · {agentCursorPoint.source === "agent" ? "live" : "estimated"}
+                      </span>
+                    </div>
+                  ) : liveViewportPresentation.showSyntheticScaffold ? (
+                    <div className="agent-cursor is-placeholder" style={{ left: "62%", top: "62%" }}>
+                      <MousePointer2 aria-hidden="true" size={24} />
+                      <span>Waiting for agent</span>
+                    </div>
                   ) : null}
                   <div className="thought-annotation">
                     <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>

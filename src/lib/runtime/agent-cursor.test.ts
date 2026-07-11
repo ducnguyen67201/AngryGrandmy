@@ -26,11 +26,15 @@ function event(
 describe("agent cursor replay", () => {
   it("uses the latest reported cursor at or before the active evidence frame", () => {
     expect(getAgentCursorForFrame({
-      events: [event("first", 2, 20, 30), event("future", 6, 80, 90)],
+      events: [
+        event("first", 2, 20, 30),
+        event("latest", 3, 45, 55),
+        event("future", 6, 80, 90),
+      ],
       personaId: "casey",
       frameCursor: 4,
       fallback: null,
-    })).toEqual({ x: 20, y: 30, eventId: "first", source: "agent" });
+    })).toEqual({ x: 45, y: 55, eventId: "latest", source: "agent" });
   });
 
   it("labels a heatmap position as estimated when old evidence has no cursor data", () => {
@@ -40,5 +44,14 @@ describe("agent cursor replay", () => {
       frameCursor: 12,
       fallback: { id: "hotspot-1", x: 65, y: 42 },
     })).toEqual({ x: 65, y: 42, eventId: "hotspot-1", source: "evidence" });
+  });
+
+  it("renders no cursor when neither reported nor valid fallback evidence exists", () => {
+    expect(getAgentCursorForFrame({
+      events: [event("invalid", 2, 120, -4)],
+      personaId: "casey",
+      frameCursor: 4,
+      fallback: null,
+    })).toBeNull();
   });
 });
