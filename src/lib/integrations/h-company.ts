@@ -130,7 +130,31 @@ function buildPersonaPrompt(
     `Safety boundaries: ${analysis.globalSafetyBoundaries.join("; ")}`,
     `Stop conditions: ${persona.stopConditions.join("; ")}`,
     "Do not submit real purchases, appointments, payments, messages, credentials, or private information.",
-    "Return a concise final answer with completion, evidence, friction points, and recommendations.",
+    "When finished, return ONLY strict JSON with this exact shape:",
+    JSON.stringify(
+      {
+        completion: "success | partial | abandoned | blocked",
+        summary: "One concise sentence about what happened.",
+        evidence: ["Visible thing the agent observed or clicked."],
+        frictionEvents: [
+          {
+            step: 1,
+            category:
+              "navigation | clarity | feedback | recovery | trust | accessibility | technical",
+            severity: 3,
+            observation: "Plain-language description of the friction.",
+            visibleEvidence: "What was visible on screen that proves it.",
+            recommendation: "Concrete product fix.",
+            narratedObservation: "Short first-person persona reaction, under 180 characters.",
+            recovered: false,
+          },
+        ],
+        safeStopReached: true,
+      },
+      null,
+      2,
+    ),
+    "Use category values exactly from the allowed list. Use severity as an integer from 1 to 5. If there is no friction, return an empty frictionEvents array.",
   ].join("\n\n");
 }
 

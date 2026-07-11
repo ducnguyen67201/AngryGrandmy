@@ -377,6 +377,17 @@ export default function Home() {
                     <p className="mt-2 line-clamp-2 text-sm text-paper/68">
                       {session?.latestActionLabel ?? persona.task}
                     </p>
+                    {session?.agentViewUrl ? (
+                      <a
+                        className="mt-3 inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.12em] text-mint transition hover:text-paper"
+                        href={session.agentViewUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <ExternalLink size={13} />
+                        Watch
+                      </a>
+                    ) : null}
                   </div>
                 </div>
               );

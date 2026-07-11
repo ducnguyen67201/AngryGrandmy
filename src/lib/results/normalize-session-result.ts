@@ -3,6 +3,7 @@ import type {
   FrictionEvent,
   NormalizedSession,
 } from "@/lib/schemas/run";
+import { AgentFindingSchema } from "@/lib/schemas/run";
 
 const FRICTION_HINTS =
   /\b(confus|unclear|difficult|hard|blocked|failed|could not|couldn't|issue|problem|friction|hesitat|backtrack|missing|unlabeled|tiny|trust|error)\b/i;
@@ -20,7 +21,7 @@ export function normalizeSessionResult(
   input: SessionResultInput,
 ): NormalizedSession {
   const text = [input.finalAnswer, ...input.eventText].filter(Boolean).join("\n");
-  const finding = buildFinding(text, input.status);
+  const finding = parseStructuredFinding(text) ?? buildFinding(text, input.status);
   const failed =
     input.status === "failed" ||
     input.status === "timed_out" ||
@@ -47,6 +48,28 @@ export function normalizeSessionResult(
     finding,
     errorCode: failed ? "provider_failure" : null,
   };
+}
+
+function parseStructuredFinding(text: string): AgentFinding | null {
+  const jsonText = extractJsonObject(text);
+  if (!jsonText) return null;
+
+  try {
+    const parsed = JSON.parse(jsonText) as unknown;
+    const result = AgentFindingSchema.safeParse(parsed);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractJsonObject(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const source = fenced?.[1] ?? text;
+  const start = source.indexOf("{");
+  const end = source.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  return source.slice(start, end + 1);
 }
 
 function buildFinding(text: string, status: NormalizedSession["status"]): AgentFinding {
