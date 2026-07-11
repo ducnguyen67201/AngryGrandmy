@@ -2018,7 +2018,7 @@ export default function Home() {
                         <button type="button">Primary action</button>
                       </div>
                     </>
-                  )}
+                  ) : null}
                   {liveViewportPresentation.showHotspotOverlay ? (
                     <HotspotLayer
                       hotspots={selectedHotspots}
