@@ -37,7 +37,9 @@ export default function Home() {
             <p className="eyebrow"><Sparkles size={14} /> Synthetic usability lab</p>
             <h1>
               <span className="hero-title-line">Watch real-world</span>
+              {" "}
               <span className="hero-title-line">personas</span>
+              {" "}
               <em>test every path.</em>
             </h1>
             <p className="hero-description">
