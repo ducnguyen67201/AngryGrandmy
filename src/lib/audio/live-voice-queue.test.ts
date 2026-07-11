@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   enqueueLiveVoiceItem,
+  getScreenNarrationCandidate,
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
   type LiveVoiceQueueItem,
@@ -79,5 +80,32 @@ describe("live persona voice queue", () => {
       currentCursor: 9,
       playedEventIds: new Set(),
     }).map(({ id }) => id)).toEqual(["at-frame", "later"]);
+  });
+
+  it("uses the newest selected-persona frame when H provides no narration", () => {
+    const events = [
+      { id: "frame-1", personaId: "linda", type: "viewport", cursor: 1, imageUrl: "data:image/png;base64,one" },
+      { id: "frame-2", personaId: "linda", type: "viewport", cursor: 2, imageUrl: "data:image/png;base64,two" },
+      { id: "rosa-frame", personaId: "rosa", type: "viewport", cursor: 3, imageUrl: "data:image/png;base64,three" },
+    ];
+
+    expect(getScreenNarrationCandidate({
+      enabled: true,
+      events,
+      selectedPersonaId: "linda",
+      processedEventIds: new Set(["frame-1"]),
+    })?.id).toBe("frame-2");
+  });
+
+  it("does not synthesize a frame fallback when H already supplied narration", () => {
+    expect(getScreenNarrationCandidate({
+      enabled: true,
+      events: [
+        { id: "frame", personaId: "linda", type: "viewport", cursor: 2, imageUrl: "data:image/png;base64,one" },
+        { id: "thought", personaId: "linda", type: "narration", cursor: 2, text: "I can see the button." },
+      ],
+      selectedPersonaId: "linda",
+      processedEventIds: new Set(),
+    })).toBeNull();
   });
 });
