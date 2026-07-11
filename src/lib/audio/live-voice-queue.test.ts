@@ -47,18 +47,24 @@ describe("live persona voice queue", () => {
     })).toBe(false);
   });
 
-  it("primes replay with the visible persona line before frame events arrive", () => {
+  it("primes replay from the visible screen frame instead of the persona quote", () => {
     expect(shouldPrimeReplayNarration({
       enabled: true,
       frameCount: 46,
       selectedPersonaId: "arjun",
-      narration: "I want to compare the options carefully.",
+      hasViewportImage: true,
     })).toBe(true);
     expect(shouldPrimeReplayNarration({
       enabled: true,
       frameCount: 0,
       selectedPersonaId: "arjun",
-      narration: "No replay frames exist.",
+      hasViewportImage: true,
+    })).toBe(false);
+    expect(shouldPrimeReplayNarration({
+      enabled: true,
+      frameCount: 46,
+      selectedPersonaId: "arjun",
+      hasViewportImage: false,
     })).toBe(false);
   });
 
@@ -145,7 +151,7 @@ describe("live persona voice queue", () => {
     })?.id).toBe("frame-2");
   });
 
-  it("does not synthesize a frame fallback when H already supplied narration", () => {
+  it("still narrates the visible screen when H already supplied a thought", () => {
     expect(getScreenNarrationCandidate({
       enabled: true,
       events: [
@@ -154,7 +160,7 @@ describe("live persona voice queue", () => {
       ],
       selectedPersonaId: "linda",
       processedEventIds: new Set(),
-    })).toBeNull();
+    })?.id).toBe("frame");
   });
 
   it("uses vision to locate a same-frame narration that has no coordinates", () => {
