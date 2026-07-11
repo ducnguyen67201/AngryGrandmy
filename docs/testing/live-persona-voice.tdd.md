@@ -71,3 +71,10 @@ This iteration uses Gradium's existing REST TTS response and a browser audio que
 - Verification: `pnpm vitest run src/lib/hotspots/build-replay-attention.test.ts` passes 6 tests; `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
 - Coverage: focused replay-attention coverage is 100% statements, branches, functions, and lines.
 - Future fallback: if browser audio remains unreliable in demos, capture replay frames as a storyboard and generate a narrated video/audio track asynchronously from the frame sequence.
+
+### Demo replay share URL
+
+- Reported behavior: the shared URL with `url`, `objective`, and `testers` opened the setup screen, so there was no heatmap and no voice control on first load.
+- RED checkpoint: `c3a98e9 test: reproduce demo replay share link` requires explicit demo replay parsing and prevents stale autosave from overriding a replay URL.
+- GREEN checkpoint: `bb55b71 fix: load demo replay from share URL` adds `demo=1` / `replay=1`, loads a safe fixture-backed replay with the requested URL, objective, and tester count, preserves the demo flag during URL normalization, and avoids launching real H sessions on page load.
+- Browser proof: `http://localhost:3000/?url=https%3A%2F%2Fgettrustloop.app%2F&objective=Find+the+primary+user+workflow+and+stop+before+an+irreversible+action.&testers=3&demo=1` opens directly to `Watching Linda`, `Run complete`, visible heatmap, visible live voice control, and three personas.
