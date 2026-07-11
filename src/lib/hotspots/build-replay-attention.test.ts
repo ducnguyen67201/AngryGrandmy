@@ -21,6 +21,12 @@ function event(overrides: Partial<AgentRuntimeEvent>): AgentRuntimeEvent {
 }
 
 describe("buildReplayAttentionHotspots", () => {
+  it("returns no replay heat when no persona is selected", () => {
+    expect(buildReplayAttentionHotspots([
+      event({ id: "visible", cursor: 1 }),
+    ], undefined, null, 1)).toEqual([]);
+  });
+
   it("reveals attention points only for the active replay frame window", () => {
     const events = [
       event({ id: "early", cursor: 2, x: 20, y: 30 }),
@@ -57,6 +63,35 @@ describe("buildReplayAttentionHotspots", () => {
 
     expect(hotspots.find(({ id }) => id === "attention-blocked")?.severity)
       .toBeGreaterThan(hotspots.find(({ id }) => id === "attention-looking")?.severity ?? 0);
+  });
+
+  it("uses defaults for sparse frustration and narration events", () => {
+    const hotspots = buildReplayAttentionHotspots([
+      event({
+        id: "sparse-frustration",
+        type: "frustration",
+        severity: undefined,
+        observation: undefined,
+        text: undefined,
+        recommendation: undefined,
+      }),
+      event({ id: "frustrated", cursor: 2, emotion: "frustrated" }),
+      event({ id: "uncertain", cursor: 3, emotion: "uncertain" }),
+      event({ id: "relieved", cursor: 4, emotion: "relieved" }),
+    ], "arjun", null, 4);
+
+    expect(hotspots.find(({ id }) => id === "attention-sparse-frustration"))
+      .toMatchObject({
+        severity: 4,
+        evidence: "Observed this interface element.",
+        recommendation: "Review this high-attention interface area.",
+      });
+    expect(hotspots.find(({ id }) => id === "attention-frustrated")?.severity)
+      .toBe(4);
+    expect(hotspots.find(({ id }) => id === "attention-uncertain")?.severity)
+      .toBe(3);
+    expect(hotspots.find(({ id }) => id === "attention-relieved")?.severity)
+      .toBe(1);
   });
 
   it("ignores events without valid screenshot coordinates", () => {

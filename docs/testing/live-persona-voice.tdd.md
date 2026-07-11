@@ -62,3 +62,12 @@ This iteration uses Gradium's existing REST TTS response and a browser audio que
 - GREEN checkpoint: `794e0da fix: narrate replay screen actions` makes screenshot-backed replay prefer `/api/screen-narration`, stops H thought narration when a viewport frame exists, keeps screen narration active even when H already provided a thought, updates the vision prompt to third-person visible action commentary, and changes the manual button to narrate the current screen.
 - Verification: `pnpm vitest run src/lib/audio/live-voice-queue.test.ts src/lib/audio/screen-narration.test.ts` passes 18 tests; `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
 - Coverage: focused audio coverage is 94.23% statements, 89.47% branches, 100% functions, and 97.67% lines.
+
+### Frame-synced replay heatmap correction
+
+- Reported behavior: the replay heatmap stayed fixed while the browser frame changed, and the narration/card felt detached from the current UI.
+- RED checkpoint: `241a7fd test: reproduce static replay heatmap` requires replay attention to use only the active frame window instead of every signal up to the current cursor.
+- GREEN checkpoint: `5e4e7bd fix: sync replay heatmap to frame` hides final summary hotspots during replay, renders only frame-window attention/friction signals, scopes the narration and frustration card to the active frame, and shortens replay screen-narration cooldown from 6 seconds to 2.5 seconds.
+- Verification: `pnpm vitest run src/lib/hotspots/build-replay-attention.test.ts` passes 6 tests; `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
+- Coverage: focused replay-attention coverage is 100% statements, branches, functions, and lines.
+- Future fallback: if browser audio remains unreliable in demos, capture replay frames as a storyboard and generate a narrated video/audio track asynchronously from the frame sequence.
