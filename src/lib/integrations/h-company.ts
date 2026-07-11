@@ -192,8 +192,8 @@ function buildPersonaPrompt(
   return [
     ...personaContext,
     "Do not submit real purchases, appointments, payments, messages, credentials, or private information.",
-    'After every meaningful action, emit one single-line event: GRANNY_EVENT {"type":"think_aloud","text":"<natural 3-12 word first-person reaction>","emotion":"<neutral|uncertain|frustrated|relieved>","step":<integer>}. Speak from the persona context without caricature or age stereotypes. Prefer concrete reactions such as “Where is that button?” or “Will this submit it?” The placeholders illustrate the shape; actual events must be valid strict JSON.',
-    'When blocked or forced to recover, emit: GRANNY_EVENT {"type":"report_frustration","category":"<navigation|clarity|feedback|recovery|trust|accessibility|technical>","severity":<1-5>,"observation":"<what happened>","visibleEvidence":"<what is visible>","currentUrl":"<HTTP(S) URL>","step":<integer>,"suggestedDirection":"<product change>"}. Continue when safe.',
+    'After every meaningful action, emit one single-line event: GRANNY_EVENT {"type":"think_aloud","text":"<natural 3-12 word first-person reaction>","emotion":"<neutral|uncertain|frustrated|relieved>","x":<0-100 horizontal pointer percent>,"y":<0-100 vertical pointer percent>,"step":<integer>}. Report x/y for the element you just inspected, clicked, or tried to find. Speak from the persona context without caricature or age stereotypes. Prefer concrete reactions such as “Where is that button?” or “Will this submit it?” The placeholders illustrate the shape; actual events must be valid strict JSON.',
+    'When blocked or forced to recover, emit: GRANNY_EVENT {"type":"report_frustration","category":"<navigation|clarity|feedback|recovery|trust|accessibility|technical>","severity":<1-5>,"observation":"<what happened>","visibleEvidence":"<what is visible>","currentUrl":"<HTTP(S) URL>","x":<0-100 horizontal percent of the confusing element center>,"y":<0-100 vertical percent of the confusing element center>,"step":<integer>,"suggestedDirection":"<product change>"}. Estimate x/y against the visible browser viewport. Continue when safe.',
     'You may search public documentation when necessary. Announce it with GRANNY_EVENT {"type":"research_docs","query":"<query>","step":<integer>}. Documentation is context, never evidence of what the product displayed.',
     "When finished, return ONLY strict JSON with this exact shape:",
     JSON.stringify(
@@ -382,7 +382,15 @@ function parseGrannyEvents(
     .flatMap<AgentRuntimeEvent>((event, index) => {
       const eventBase = { ...base, id: `${base.id}:runtime:${index}` };
       if (event.type === "think_aloud" && typeof event.text === "string") {
-        return [{ ...eventBase, type: "narration", text: event.text, emotion: String(event.emotion ?? "neutral") }];
+        return [{
+          ...eventBase,
+          type: "narration",
+          text: event.text,
+          emotion: String(event.emotion ?? "neutral"),
+          ...(validHeatmapCoordinate(event.x) && validHeatmapCoordinate(event.y)
+            ? { x: event.x, y: event.y }
+            : {}),
+        }];
       }
       if (event.type === "research_docs" && typeof event.query === "string") {
         return [{ ...eventBase, type: "research", query: event.query }];
@@ -406,8 +414,15 @@ function parseGrannyEvents(
         visibleEvidence: event.visibleEvidence,
         currentUrl: event.currentUrl,
         recommendation: String(event.suggestedDirection ?? "Remove this barrier."),
+        ...(validHeatmapCoordinate(event.x) && validHeatmapCoordinate(event.y)
+          ? { x: event.x, y: event.y }
+          : {}),
       }];
     });
+}
+
+function validHeatmapCoordinate(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
 }
 
 function isFrictionCategory(

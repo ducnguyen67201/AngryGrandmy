@@ -23,6 +23,9 @@ export type AgentRuntimeEvent = {
   visibleEvidence?: string;
   currentUrl?: string;
   recommendation?: string;
+  x?: number;
+  y?: number;
+  coordinateSource?: "agent" | "vision";
 };
 
 const MAX_VIEWPORT_FRAMES_PER_PERSONA = 80;

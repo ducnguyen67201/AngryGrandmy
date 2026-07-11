@@ -29,3 +29,12 @@ The journey was derived from the requested live usability experience: as a resea
 ## Known gap
 
 This iteration uses Gradium's existing REST TTS response and a browser audio queue. True chunk-level WebSocket audio streaming remains a follow-up; the explicit sound unlock and 1.8-second event polling provide the reliable low-latency MVP.
+
+## Screen-aware live narration follow-up
+
+- Root cause: H viewport events were rendered live, but audio required a separate `think_aloud` event. Frame-only batches therefore remained on the static persona preview.
+- RED checkpoints: `b9f1e8d` reproduces silent live frames; `857dbf6` requires audio unlock during dispatch.
+- GREEN checkpoints: `7f9ad5d` adds OpenAI vision narration with Gradium playback; `fdb69f7` unlocks audio from the Dispatch gesture.
+- Behavior: explicit H narration wins. Otherwise, the newest selected-persona frame is vision-analyzed at most once every six seconds and converted into a short first-person thought.
+- Runtime proof: the local `/api/screen-narration` endpoint returned `source: openai` and a spoken observation from an image request.
+- Verification: 30 files and 108 tests pass; ESLint and TypeScript pass. Focused narration coverage is 97.05% statements, 94% branches, 100% functions, and 96.55% lines.

@@ -1,13 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import Image from "next/image";
-import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, MousePointer2, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import {
   enqueueLiveVoiceItem,
+  getScreenNarrationCandidate,
+  getReplayNarrationsForFrame,
   isLiveNarrationEligible,
+  shouldEnableLiveVoiceForDispatch,
   type LiveVoiceQueueItem,
 } from "@/lib/audio/live-voice-queue";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
@@ -17,6 +20,8 @@ import {
   type VisualHotspot,
 } from "@/lib/hotspots/build-hotspots";
 import { buildLiveVisualHotspots } from "@/lib/hotspots/build-live-hotspots";
+import { buildHeatmapDensityBlobs } from "@/lib/hotspots/build-heatmap-density";
+import { buildReplayAttentionHotspots } from "@/lib/hotspots/build-replay-attention";
 import {
   buildJudgeSummary,
   buildMarkdownReport,
@@ -46,6 +51,14 @@ import type {
 import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
 import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
+import type { CalibrationSession } from "@/lib/calibration/calibration";
+import { calculateBehaviorOverlap } from "@/lib/calibration/calculate-overlap";
+import { createCalibratedPersona } from "@/lib/calibration/create-calibrated-persona";
+import {
+  evidenceTypesFromSession,
+  isUserSuppliedPersona,
+  mergeCalibratedPersona,
+} from "@/lib/calibration/lab-integration";
 import { getRunGuidance } from "@/lib/ui/run-guidance";
 import { buildPanelReviewItems } from "@/lib/ui/panel-review";
 import { getLiveViewportPresentation } from "@/lib/ui/live-viewport";
@@ -55,6 +68,9 @@ import {
   mergeAgentRuntimeEvents,
   type AgentRuntimeEvent,
 } from "@/lib/runtime/agent-events";
+import {
+  getAgentCursorForFrame,
+} from "@/lib/runtime/agent-cursor";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -88,6 +104,16 @@ type VoiceReactionPayload = {
     audioBase64: string | null;
     audioMime: string | null;
     transcript: string;
+  };
+  error?: { message?: string };
+};
+
+type ScreenNarrationPayload = {
+  data?: {
+    source: "openai" | "fallback";
+    text: string;
+    x?: number;
+    y?: number;
   };
   error?: { message?: string };
 };
@@ -173,6 +199,8 @@ export default function Home() {
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
   const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
+  const [activeCalibration, setActiveCalibration] = useState<CalibrationSession | null>(null);
+  const [regressionLine, setRegressionLine] = useState("Guarded regression job ready.");
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
@@ -181,14 +209,18 @@ export default function Home() {
   const liveEventCursors = useRef(new Map<string, number>());
   const liveVoiceEnabledRef = useRef(false);
   const liveVoiceQueueRef = useRef<LiveVoiceQueueItem[]>([]);
+  const liveVoiceAudioCacheRef = useRef(new Map<string, LiveVoiceQueueItem>());
   const liveVoiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const liveVoicePlayingRef = useRef(false);
   const spokenLiveEventIds = useRef(new Set<string>());
+  const screenNarratedEventIds = useRef(new Set<string>());
+  const lastScreenNarrationAt = useRef(0);
+  const replaySpokenEventIds = useRef(new Set<string>());
   const sessionsRef = useRef(snapshot.sessions);
   sessionsRef.current = snapshot.sessions;
   const liveMode = snapshot.phase === "running";
   const customPersonaCount =
-    snapshot.analysis?.personas.filter((persona) => persona.id.startsWith("custom-")).length ?? 0;
+    snapshot.analysis?.personas.filter(isUserSuppliedPersona).length ?? 0;
   const generatedPersonaCount =
     (snapshot.analysis?.personas.length ?? testerCount) - customPersonaCount;
   const selectedTesterCount = Math.min(testerCount, generatedPersonaCount) + customPersonaCount;
@@ -253,6 +285,8 @@ export default function Home() {
                 observation: event.observation,
                 visibleEvidence: event.visibleEvidence,
                 recommendation: event.recommendation,
+                x: event.x,
+                y: event.y,
               }]
             : [],
         ),
@@ -298,10 +332,49 @@ export default function Home() {
     snapshot.sessions.find((session) => session.personaId === selectedPersona?.id) ??
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
     snapshot.sessions[0];
+  const calibratedRunSession = activeCalibration
+    ? snapshot.sessions.find(
+        (session) => session.personaId === `calibrated-${activeCalibration.id}`,
+      )
+    : undefined;
+  const behaviorOverlap = useMemo(
+    () =>
+      activeCalibration
+        ? calculateBehaviorOverlap(
+            activeCalibration.evidence,
+            evidenceTypesFromSession(calibratedRunSession),
+          )
+        : null,
+    [activeCalibration, calibratedRunSession],
+  );
   const viewportFrames = useMemo(
     () => getPersonaViewportFrames(liveEvents, selectedPersona?.id),
     [liveEvents, selectedPersona?.id],
   );
+  const replayNarrationEvents = useMemo(() => {
+    const runtimeNarrations = liveEvents.filter(
+      (event) =>
+        event.type === "narration" &&
+        event.personaId === selectedPersona?.id &&
+        Boolean(event.text?.trim()),
+    );
+    if (runtimeNarrations.length > 0) return runtimeNarrations;
+
+    return (selectedSession?.finding?.frictionEvents ?? []).map(
+      (friction, index) => {
+        const matchingFrame =
+          viewportFrames.find((frame) => frame.step >= friction.step) ??
+          viewportFrames.at(-1);
+        return {
+          id: `replay-finding-${selectedSession?.sessionId ?? "session"}-${index}`,
+          personaId: selectedPersona?.id ?? "unknown",
+          type: "narration" as const,
+          cursor: matchingFrame?.cursor ?? friction.step,
+          text: friction.narratedObservation || friction.observation,
+        };
+      },
+    );
+  }, [liveEvents, selectedPersona?.id, selectedSession, viewportFrames]);
   const lastViewportFrameIndex = Math.max(0, viewportFrames.length - 1);
   const activeViewportFrameIndex =
     replayFrameIndex === null
@@ -325,6 +398,25 @@ export default function Home() {
   const selectedHotspots = displayedHotspots.filter(
     (hotspot) => hotspot.personaId === selectedPersona?.id,
   );
+  const replayAttentionHotspots = useMemo(
+    () =>
+      replayFrameIndex === null
+        ? []
+        : buildReplayAttentionHotspots(
+            liveEvents,
+            selectedPersona?.id,
+            eventCursorLimit,
+          ),
+    [eventCursorLimit, liveEvents, replayFrameIndex, selectedPersona?.id],
+  );
+  const agentCursorPoint = selectedPersona
+    ? getAgentCursorForFrame({
+        events: liveEvents,
+        personaId: selectedPersona.id,
+        frameCursor: eventCursorLimit,
+        fallback: null,
+      })
+    : null;
   const liveViewportPresentation = getLiveViewportPresentation({
     hasLiveViewport: Boolean(liveViewport),
     hotspotCount: selectedHotspots.length,
@@ -350,6 +442,40 @@ export default function Home() {
       audio.load();
     }
     if (message) setLiveVoiceLine(message);
+  }, []);
+
+  const synthesizeVoiceItem = useCallback(async ({
+    eventId,
+    personaId,
+    voiceSlot,
+    text,
+  }: {
+    eventId: string;
+    personaId: string;
+    voiceSlot: 0 | 1 | 2 | 3;
+    text: string;
+  }): Promise<LiveVoiceQueueItem | null> => {
+    const cached = liveVoiceAudioCacheRef.current.get(eventId);
+    if (cached) return cached;
+
+    const response = await fetch("/api/voice-reaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ personaId, voiceSlot, text }),
+    });
+    const payload = (await response.json()) as VoiceReactionPayload;
+    const audioSrc = payload.data?.audioBase64
+      ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
+      : payload.data?.audioUrl;
+    if (!response.ok || !audioSrc || !payload.data?.transcript) return null;
+
+    const item = {
+      eventId,
+      audioSrc,
+      transcript: payload.data.transcript,
+    };
+    liveVoiceAudioCacheRef.current.set(eventId, item);
+    return item;
   }, []);
 
   const playNextLiveVoiceItem = useCallback(function playNextLiveVoiceItem() {
@@ -431,6 +557,32 @@ export default function Home() {
       setLiveVoiceLine("Your browser blocked audio. Allow sound, then try again.");
     }
   }, [selectedPersona?.displayName, stopLiveVoicePlayback]);
+
+  const handleReplayToggle = useCallback(async () => {
+    if (replayPlaying) {
+      setReplayPlaying(false);
+      stopLiveVoicePlayback("Replay paused. Live voice remains enabled.");
+      return;
+    }
+
+    if (!liveVoiceEnabledRef.current) {
+      await handleLiveVoiceToggle();
+    }
+    if (!liveVoiceEnabledRef.current) return;
+
+    replaySpokenEventIds.current.clear();
+    stopLiveVoicePlayback("Preparing synchronized replay narration...");
+    if (activeViewportFrameIndex >= viewportFrames.length - 1) {
+      setReplayFrameIndex(0);
+    }
+    setReplayPlaying(true);
+  }, [
+    activeViewportFrameIndex,
+    handleLiveVoiceToggle,
+    replayPlaying,
+    stopLiveVoicePlayback,
+    viewportFrames.length,
+  ]);
   const completedWithFindings = snapshot.sessions.filter(
     (session) => session.finding,
   ).length;
@@ -453,6 +605,7 @@ export default function Home() {
   useEffect(() => {
     setReplayFrameIndex(null);
     setReplayPlaying(false);
+    replaySpokenEventIds.current.clear();
   }, [selectedPersona?.id]);
 
   useEffect(() => {
@@ -467,10 +620,209 @@ export default function Home() {
         }
         return next;
       });
-    }, 1200);
+    }, 3000);
 
     return () => window.clearInterval(timer);
   }, [replayPlaying, viewportFrames.length]);
+
+  useEffect(() => {
+    if (
+      !replayPlaying ||
+      !liveVoiceEnabledRef.current ||
+      !selectedPersona ||
+      !liveViewport
+    ) {
+      return;
+    }
+
+    const previousCursor =
+      activeViewportFrameIndex > 0
+        ? viewportFrames[activeViewportFrameIndex - 1]?.cursor ?? null
+        : null;
+    const narrations = getReplayNarrationsForFrame({
+      events: replayNarrationEvents,
+      personaId: selectedPersona.id,
+      previousCursor,
+      currentCursor: liveViewport.cursor,
+      playedEventIds: replaySpokenEventIds.current,
+    });
+
+    for (const narration of narrations) {
+      replaySpokenEventIds.current.add(narration.id);
+      void synthesizeVoiceItem({
+        eventId: narration.id,
+        personaId: selectedPersona.id,
+        voiceSlot: selectedPersona.voiceSlot,
+        text: narration.text ?? "",
+      })
+        .then((voiceItem) => {
+          if (voiceItem && liveVoiceEnabledRef.current) {
+            queueLiveVoiceItem(voiceItem);
+          }
+        })
+        .catch(() => {
+          setLiveVoiceLine("Replay narration failed. Continuing visual replay...");
+        });
+    }
+  }, [
+    activeViewportFrameIndex,
+    liveViewport,
+    queueLiveVoiceItem,
+    replayNarrationEvents,
+    replayPlaying,
+    selectedPersona,
+    synthesizeVoiceItem,
+    viewportFrames,
+  ]);
+
+  useEffect(() => {
+    if (
+      snapshot.sessions.length === 0 ||
+      !liveVoiceEnabled ||
+      !selectedPersona ||
+      !liveViewport?.imageUrl
+    ) {
+      return;
+    }
+
+    const eventsAtCurrentFrame = liveEvents.filter(
+      (event) =>
+        event.id === liveViewport.id ||
+        (event.personaId === selectedPersona.id &&
+          event.type === "narration" &&
+          event.cursor === liveViewport.cursor),
+    );
+    const candidate = getScreenNarrationCandidate({
+      enabled: liveVoiceEnabledRef.current,
+      events: eventsAtCurrentFrame,
+      selectedPersonaId: selectedPersona.id,
+      processedEventIds: screenNarratedEventIds.current,
+    });
+    if (!candidate?.imageUrl) return;
+    const existingFrameNarration = eventsAtCurrentFrame.find(
+      (event) =>
+        event.personaId === selectedPersona.id &&
+        event.type === "narration" &&
+        event.cursor === candidate.cursor &&
+        Boolean(event.text?.trim()),
+    );
+
+    const now = Date.now();
+    if (now - lastScreenNarrationAt.current < 6_000) return;
+    lastScreenNarrationAt.current = now;
+    screenNarratedEventIds.current.add(candidate.id);
+    const narrationId = `screen-narration:${candidate.id}`;
+    let cancelled = false;
+
+    setLiveVoiceLine(`Reading what ${selectedPersona.displayName} sees...`);
+    void fetch("/api/screen-narration", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        imageUrl: candidate.imageUrl,
+        personaName: selectedPersona.displayName,
+        personaDescription: `${selectedPersona.tagline}. ${selectedPersona.context}. ${selectedPersona.behaviors.join(" ")}`,
+        objective: snapshot.objective ?? objective,
+        currentUrl: candidate.currentUrl ?? snapshot.url,
+      }),
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as ScreenNarrationPayload;
+        if (!response.ok || !payload.data?.text || cancelled) return null;
+        const narrationText = existingFrameNarration?.text ?? payload.data.text;
+        const narrationEvent: AgentRuntimeEvent = {
+          id: narrationId,
+          sessionId: candidate.sessionId ?? selectedSession?.sessionId ?? candidate.id,
+          personaId: selectedPersona.id,
+          cursor: candidate.cursor,
+          step: candidate.step ?? candidate.cursor,
+          createdAt: new Date().toISOString(),
+          type: "narration",
+          text: narrationText,
+          emotion: "observing",
+          ...(typeof payload.data.x === "number" && typeof payload.data.y === "number"
+            ? {
+                x: payload.data.x,
+                y: payload.data.y,
+                coordinateSource: "vision" as const,
+              }
+            : {}),
+        };
+        const voiceItem = existingFrameNarration
+          ? null
+          : await synthesizeVoiceItem({
+              eventId: narrationId,
+              personaId: selectedPersona.id,
+              voiceSlot: selectedPersona.voiceSlot,
+              text: narrationText,
+            });
+        return { narrationEvent, voiceItem };
+      })
+      .then((result) => {
+        if (result && !cancelled && liveVoiceEnabledRef.current) {
+          setLiveEvents((current) =>
+            mergeAgentRuntimeEvents(current, [result.narrationEvent]),
+          );
+          if (result.voiceItem) queueLiveVoiceItem(result.voiceItem);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLiveVoiceLine("Could not narrate this frame. Watching for the next one...");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    liveEvents,
+    liveVoiceEnabled,
+    liveViewport,
+    objective,
+    queueLiveVoiceItem,
+    selectedPersona,
+    selectedSession?.sessionId,
+    snapshot.objective,
+    snapshot.sessions.length,
+    snapshot.url,
+    synthesizeVoiceItem,
+  ]);
+
+  useEffect(() => {
+    const calibrationId = new URLSearchParams(window.location.search).get(
+      "calibration",
+    );
+    if (!calibrationId) return;
+    let cancelled = false;
+
+    fetch(`/api/calibrations/${encodeURIComponent(calibrationId)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as { data?: CalibrationSession };
+        if (!response.ok || !payload.data || payload.data.status !== "approved") {
+          throw new Error("Calibration is missing or not approved.");
+        }
+        if (!cancelled) {
+          setActiveCalibration(payload.data);
+          setTargetUrl(payload.data.targetUrl);
+          setObjective(payload.data.objective);
+          setStatusLine(
+            `${payload.data.testerName}'s approved behavioral proxy is ready to join the panel.`,
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStatusLine("Could not load the approved calibration profile.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const queryState = parseLabSearchParams(window.location.search);
@@ -512,7 +864,12 @@ export default function Home() {
         objective,
         testerCount,
       });
-      const nextUrl = `${window.location.pathname}${search}${window.location.hash}`;
+      const params = new URLSearchParams(search);
+      const calibrationId =
+        activeCalibration?.id ??
+        new URLSearchParams(window.location.search).get("calibration");
+      if (calibrationId) params.set("calibration", calibrationId);
+      const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
       const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       if (nextUrl !== currentUrl) {
         window.history.replaceState(window.history.state, "", nextUrl);
@@ -520,7 +877,7 @@ export default function Home() {
     } catch {
       // Keep the last valid share URL while the form is temporarily incomplete.
     }
-  }, [objective, persistenceHydrated, targetUrl, testerCount]);
+  }, [activeCalibration?.id, objective, persistenceHydrated, targetUrl, testerCount]);
 
   useEffect(() => {
     if (!persistenceHydrated) return;
@@ -695,25 +1052,14 @@ export default function Home() {
         })) {
           spokenLiveEventIds.current.add(event.id);
           try {
-            const response = await fetch("/api/voice-reaction", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                personaId: persona.id,
-                voiceSlot: persona.voiceSlot,
-                text: event.text,
-              }),
+            const voiceItem = await synthesizeVoiceItem({
+              eventId: event.id,
+              personaId: persona.id,
+              voiceSlot: persona.voiceSlot,
+              text: event.text ?? "",
             });
-            const payload = (await response.json()) as VoiceReactionPayload;
-            const audioSrc = payload.data?.audioBase64
-              ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
-              : payload.data?.audioUrl;
-            if (response.ok && audioSrc && payload.data?.transcript) {
-              queueLiveVoiceItem({
-                eventId: event.id,
-                audioSrc,
-                transcript: payload.data.transcript,
-              });
+            if (voiceItem) {
+              queueLiveVoiceItem(voiceItem);
             } else {
               setLiveVoiceLine("Gradium did not return audio. Listening for the next thought...");
             }
@@ -765,6 +1111,7 @@ export default function Home() {
     snapshot.analysis?.personas,
     snapshot.id,
     snapshot.objective,
+    synthesizeVoiceItem,
     sessionKey,
     snapshot.url,
   ]);
@@ -958,15 +1305,23 @@ export default function Home() {
       }
 
       const now = new Date().toISOString();
+      const plannedAnalysis = activeCalibration
+        ? mergeCalibratedPersona(
+            payload.data.analysis,
+            createCalibratedPersona(activeCalibration),
+          )
+        : payload.data.analysis;
       setSnapshot((current) => ({
         ...current,
         id: `plan-${Date.now()}`,
         phase: "revealing",
         url: targetUrl,
         objective,
-        analysis: payload.data?.analysis ?? current.analysis,
+        analysis: plannedAnalysis,
         sessions: [],
-        selectedPersonaId: payload.data?.analysis?.personas[0]?.id ?? null,
+        selectedPersonaId: activeCalibration
+          ? `calibrated-${activeCalibration.id}`
+          : plannedAnalysis.personas[0]?.id ?? null,
         report: null,
         error: null,
         createdAt: now,
@@ -975,7 +1330,7 @@ export default function Home() {
       setPersonasAccepted(false);
       setLocalizedHotspots(null);
       setStatusLine(
-        `Generated ${payload.data.analysis.personas.length} personas with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
+        `Generated ${plannedAnalysis.personas.length} personas${activeCalibration ? ", including the approved behavioral proxy," : ""} with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
       );
     } catch (error) {
       setStatusLine(error instanceof Error ? error.message : "Could not generate a persona plan.");
@@ -986,17 +1341,16 @@ export default function Home() {
 
   async function handleLaunch() {
     if (!snapshot.analysis || !canDispatch) return;
+    if (shouldEnableLiveVoiceForDispatch(liveVoiceEnabledRef.current)) {
+      await handleLiveVoiceToggle();
+    }
     setDispatching(true);
     const beforeLaunch = snapshot;
-    const customPersona = snapshot.analysis?.personas.find((persona) =>
-      persona.id.startsWith("custom-"),
-    );
+    const customPersona = snapshot.analysis?.personas.find(isUserSuppliedPersona);
     const generatedPersonas = snapshot.analysis.personas
-      .filter((persona) => !persona.id.startsWith("custom-"))
+      .filter((persona) => !isUserSuppliedPersona(persona))
       .slice(0, testerCount);
-    const customPersonas = snapshot.analysis.personas.filter((persona) =>
-      persona.id.startsWith("custom-"),
-    );
+    const customPersonas = snapshot.analysis.personas.filter(isUserSuppliedPersona);
     const personasToLaunch = [...generatedPersonas, ...customPersonas];
     const startedAt = new Date().toISOString();
     const launchingSessions: NormalizedSession[] = personasToLaunch.map(
@@ -1018,6 +1372,10 @@ export default function Home() {
     );
     liveEventCursors.current.clear();
     spokenLiveEventIds.current.clear();
+    screenNarratedEventIds.current.clear();
+    lastScreenNarrationAt.current = 0;
+    replaySpokenEventIds.current.clear();
+    liveVoiceAudioCacheRef.current.clear();
     stopLiveVoicePlayback(
       liveVoiceEnabledRef.current
         ? `Listening for ${personasToLaunch[0]?.displayName ?? "the selected persona"}'s first thought...`
@@ -1091,7 +1449,7 @@ export default function Home() {
       setSnapshot((current) => {
         if (!current.analysis) return current;
         const generatedPersonas = current.analysis.personas.filter(
-          (persona) => !persona.id.startsWith("custom-"),
+          (persona) => !isUserSuppliedPersona(persona),
         );
         return {
           ...current,
@@ -1129,6 +1487,10 @@ export default function Home() {
     lastReportKey.current = null;
     liveEventCursors.current.clear();
     spokenLiveEventIds.current.clear();
+    screenNarratedEventIds.current.clear();
+    lastScreenNarrationAt.current = 0;
+    replaySpokenEventIds.current.clear();
+    liveVoiceAudioCacheRef.current.clear();
     liveVoiceEnabledRef.current = false;
     setLiveVoiceEnabled(false);
     stopLiveVoicePlayback("Enable live voice to hear new agent thoughts.");
@@ -1251,6 +1613,29 @@ export default function Home() {
     const response = await fetch("/api/report?fixJob=1", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ runId:snapshot.id, sessionId:selectedSession.sessionId, personaId:selectedPersona.id, personaName:selectedPersona.displayName, productUrl:snapshot.url, objective:snapshot.objective ?? objective, frustrationEventId:requestId, frustration:selectedFriction }) });
     if (response.ok) { setFixRequestIds((current) => new Set(current).add(requestId)); setStatusLine(`Fix proposal job queued for ${selectedPersona.displayName}.`); }
     else setStatusLine("Could not start the fix proposal job.");
+  }
+
+  async function handleQueueCalibratedRegression() {
+    if (!activeCalibration || !runComplete) return;
+    setRegressionLine("Queueing a proposal-only NemoClaw regression job...");
+    try {
+      const response = await fetch(
+        `/api/calibrations/${encodeURIComponent(activeCalibration.id)}/regression`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ candidateRunId: snapshot.id }),
+        },
+      );
+      if (!response.ok) throw new Error("Regression job was not accepted.");
+      setRegressionLine(
+        "Guarded regression queued: allowed host only, read-only investigation, proposal-only output.",
+      );
+    } catch (error) {
+      setRegressionLine(
+        error instanceof Error ? error.message : "Could not queue the regression job.",
+      );
+    }
   }
 
   if (false) {
@@ -2156,6 +2541,9 @@ export default function Home() {
             <button className="analyze-button" disabled={loading || dispatching || !authorized} type="submit">
               <Sparkles size={16} /> {loading ? "Finding target users…" : "Suggest target users"}
             </button>
+            <a className="mt-3 inline-flex items-center gap-2 text-sm font-black text-brass" href="/calibrate">
+              <ShieldCheck size={15} /> Calibrate from a real human session
+            </a>
           </form>
         </section>
         ) : null}
@@ -2169,10 +2557,17 @@ export default function Home() {
                 </div>
               </div>
 
+              {activeCalibration ? (
+                <div className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+                  <b>{activeCalibration.testerName}&apos;s behavioral proxy is attached.</b>{" "}
+                  It contains only the rules approved during human review and will run alongside the generated panel.
+                </div>
+              ) : null}
+
               <div className="persona-cards" role="group" aria-label="Suggested tester roster">
                 {snapshot.analysis?.personas.map((persona, index) => (
                   <button
-                    aria-label={`${persona.displayName}, ${index < testerCount || persona.id.startsWith("custom-") ? "included" : "standby"}. Preview persona`}
+                    aria-label={`${persona.displayName}, ${index < testerCount || isUserSuppliedPersona(persona) ? "included" : "standby"}. Preview persona`}
                     aria-pressed={snapshot.selectedPersonaId === persona.id}
                     className={snapshot.selectedPersonaId === persona.id ? "is-selected" : ""}
                     key={persona.id}
@@ -2186,13 +2581,13 @@ export default function Home() {
                       <b>{persona.displayName}</b>
                       <small>{persona.tagline} · {persona.digitalConfidence} confidence</small>
                     </span>
-                    <em>{index < testerCount || persona.id.startsWith("custom-") ? <><Check size={13} /> Included</> : "Standby"}</em>
+                    <em>{index < testerCount || isUserSuppliedPersona(persona) ? <><Check size={13} /> Included</> : "Standby"}</em>
                   </button>
                 ))}
               </div>
 
               <PersonaBuilder
-                disabled={loading || dispatching || liveMode}
+                disabled={loading || dispatching || liveMode || Boolean(activeCalibration)}
                 onCreate={handleCreatePersona}
               />
 
@@ -2289,6 +2684,33 @@ export default function Home() {
               })}
             </div>
 
+            {activeCalibration ? (
+              <section className="mb-5 grid gap-4 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950 md:grid-cols-[1fr_auto] md:items-center">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.16em]">Human calibration overlap</p>
+                  <p className="mt-2 text-2xl font-black">
+                    {behaviorOverlap?.score === null || behaviorOverlap?.score === undefined
+                      ? "Waiting for calibrated evidence"
+                      : `${behaviorOverlap.score}% observable overlap`}
+                  </p>
+                  <p className="mt-2 text-sm leading-6">
+                    {behaviorOverlap?.totalObserved
+                      ? `${behaviorOverlap.reproducedCount}/${behaviorOverlap.totalObserved} observed friction types reproduced. This measures evidence overlap, not personal similarity.`
+                      : "The calibrated H session must finish before overlap can be measured."}
+                  </p>
+                  <small className="mt-2 block font-semibold">{regressionLine}</small>
+                </div>
+                <button
+                  className="rounded-xl bg-[#172018] px-4 py-3 text-sm font-black text-white disabled:opacity-40"
+                  disabled={!runComplete || !calibratedRunSession?.finding}
+                  onClick={handleQueueCalibratedRegression}
+                  type="button"
+                >
+                  <Bot className="mr-2 inline" size={15} /> Queue guarded regression
+                </button>
+              </section>
+            ) : null}
+
             <div className="live-layout">
               <div className="agent-stage">
                 <div className="browser-bar">
@@ -2308,6 +2730,11 @@ export default function Home() {
                           ? "No H viewport frames received"
                           : "Waiting for H viewport"}
                   </span>
+                  {selectedHotspots.length + replayAttentionHotspots.length > 0 ? (
+                    <span className="live-heatmap-status">
+                      <Activity size={11} /> {replayFrameIndex !== null ? "Replay attention" : liveMode ? "Live heatmap" : "Evidence heatmap"} · {selectedHotspots.length + replayAttentionHotspots.length} signal{selectedHotspots.length + replayAttentionHotspots.length === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
                   {liveViewport?.imageUrl ? (
                     <Image
                       alt={`Live H Company browser for ${selectedPersona?.displayName ?? "agent"}`}
@@ -2328,14 +2755,40 @@ export default function Home() {
                       </div>
                     </>
                   ) : null}
-                  {liveViewportPresentation.showHotspotOverlay ? (
-                    <HotspotLayer
-                      hotspots={selectedHotspots}
-                      onSelect={handleHotspotSelect}
-                    />
+                  {liveViewportPresentation.showHotspotOverlay || replayAttentionHotspots.length > 0 ? (
+                    <div className="agent-viewport-coordinate-space is-heatmap">
+                      {liveViewportPresentation.showHotspotOverlay ? (
+                        <HotspotLayer
+                          hotspots={selectedHotspots}
+                          onSelect={handleHotspotSelect}
+                        />
+                      ) : null}
+                      <HeatmapDensityLayer hotspots={replayAttentionHotspots} />
+                    </div>
                   ) : null}
-                  {liveViewportPresentation.showSyntheticScaffold ? (
-                    <div className="agent-cursor">↖</div>
+                  {agentCursorPoint ? (
+                    <div className="agent-viewport-coordinate-space">
+                      <div
+                        aria-label={`${selectedPersona?.displayName ?? "Agent"} cursor, ${agentCursorPoint.source === "agent" ? "reported by H" : agentCursorPoint.source === "vision" ? "localized from the screenshot" : "estimated for legacy replay"}`}
+                        className={`agent-cursor ${agentCursorPoint.source === "agent" ? "is-reported" : agentCursorPoint.source === "vision" ? "is-vision" : "is-estimated"}`}
+                        data-cursor-source={agentCursorPoint.source}
+                        style={{
+                          left: `${agentCursorPoint.x}%`,
+                          top: `${agentCursorPoint.y}%`,
+                        }}
+                      >
+                        <i aria-hidden="true" />
+                        <MousePointer2 aria-hidden="true" size={30} />
+                        <span>
+                          {selectedPersona?.displayName ?? "Agent"} cursor · {agentCursorPoint.source === "agent" ? "H reported" : agentCursorPoint.source === "vision" ? "vision located" : "estimated"}
+                        </span>
+                      </div>
+                    </div>
+                  ) : liveViewportPresentation.showSyntheticScaffold ? (
+                    <div className="agent-cursor is-placeholder" style={{ left: "62%", top: "62%" }}>
+                      <MousePointer2 aria-hidden="true" size={30} />
+                      <span>Waiting for agent</span>
+                    </div>
                   ) : null}
                   <div className="thought-annotation">
                     <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
@@ -2365,6 +2818,7 @@ export default function Home() {
                       disabled={activeViewportFrameIndex === 0}
                       onClick={() => {
                         setReplayPlaying(false);
+                        stopLiveVoicePlayback("Replay paused. Live voice remains enabled.");
                         setReplayFrameIndex(Math.max(0, activeViewportFrameIndex - 1));
                       }}
                       type="button"
@@ -2374,16 +2828,7 @@ export default function Home() {
                     <button
                       aria-label={replayPlaying ? "Pause run replay" : "Play run replay"}
                       disabled={viewportFrames.length < 2}
-                      onClick={() => {
-                        if (replayPlaying) {
-                          setReplayPlaying(false);
-                          return;
-                        }
-                        if (activeViewportFrameIndex >= viewportFrames.length - 1) {
-                          setReplayFrameIndex(0);
-                        }
-                        setReplayPlaying(true);
-                      }}
+                      onClick={handleReplayToggle}
                       type="button"
                     >
                       {replayPlaying ? <Pause size={14} /> : <Play size={14} />}
@@ -2398,6 +2843,7 @@ export default function Home() {
                       disabled={activeViewportFrameIndex >= viewportFrames.length - 1}
                       onClick={() => {
                         setReplayPlaying(false);
+                        stopLiveVoicePlayback("Replay paused. Live voice remains enabled.");
                         setReplayFrameIndex(Math.min(viewportFrames.length - 1, activeViewportFrameIndex + 1));
                       }}
                       type="button"
@@ -2505,11 +2951,13 @@ function HotspotLayer({
   if (hotspots.length === 0) return null;
 
   return (
-    <div className="absolute inset-0 z-20">
-      {hotspots.slice(0, 4).map((hotspot) => (
+    <>
+      <HeatmapDensityLayer hotspots={hotspots} />
+      <div className="absolute inset-0 z-20 pointer-events-none">
+        {hotspots.slice(-6).map((hotspot) => (
         <button
           aria-label={`${hotspot.category} hotspot: ${hotspot.evidence}`}
-          className={`absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-2xl transition hover:scale-125 focus:outline-none focus:ring-2 focus:ring-white ${hotspotClass(
+          className={`pointer-events-auto absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-2xl transition hover:scale-125 focus:outline-none focus:ring-2 focus:ring-white ${hotspotClass(
             hotspot.severity,
           )}`}
           key={hotspot.id}
@@ -2521,10 +2969,40 @@ function HotspotLayer({
           title={`${hotspot.label}: ${hotspot.recommendation}`}
           type="button"
         >
+          <span
+            aria-hidden="true"
+            className="absolute -inset-6 rounded-full opacity-35 blur-xl"
+            style={{ backgroundColor: hotspotGlowColor(hotspot.severity) }}
+          />
           <span className="absolute -inset-2 animate-ping rounded-full bg-white/35" />
           <span className="absolute -inset-1 rounded-full border border-white/45" />
           <span className="relative">{hotspot.severity}</span>
         </button>
+      ))}
+      </div>
+    </>
+  );
+}
+
+function HeatmapDensityLayer({ hotspots }: { hotspots: VisualHotspot[] }) {
+  const densityBlobs = buildHeatmapDensityBlobs(hotspots);
+  if (densityBlobs.length === 0) return null;
+
+  return (
+    <div aria-hidden="true" className="heatmap-density-layer">
+      {densityBlobs.map((blob) => (
+        <i
+          className="heatmap-density-blob"
+          key={blob.id}
+          style={{
+            "--heatmap-core-opacity": blob.coreOpacity,
+            height: `${blob.radius * 2}%`,
+            left: `${blob.x}%`,
+            opacity: blob.opacity,
+            top: `${blob.y}%`,
+            width: `${blob.radius * 2}%`,
+          } as CSSProperties}
+        />
       ))}
     </div>
   );
@@ -2582,6 +3060,12 @@ function hotspotClass(severity: number): string {
   if (severity >= 4) return "bg-tomato shadow-[0_0_34px_rgba(229,88,72,0.85)]";
   if (severity === 3) return "bg-brass shadow-[0_0_30px_rgba(191,131,45,0.8)]";
   return "bg-mint shadow-[0_0_28px_rgba(98,196,155,0.78)]";
+}
+
+function hotspotGlowColor(severity: number): string {
+  if (severity >= 4) return "rgba(229, 88, 72, .82)";
+  if (severity === 3) return "rgba(191, 131, 45, .76)";
+  return "rgba(98, 196, 155, .72)";
 }
 
 function hotspotSummary(counts: Record<string, number>): string {

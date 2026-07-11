@@ -10,6 +10,8 @@ export type LiveFrictionSignal = {
   observation: string;
   visibleEvidence: string;
   recommendation: string;
+  x?: number;
+  y?: number;
 };
 
 export function buildLiveVisualHotspots(
@@ -21,10 +23,14 @@ export function buildLiveVisualHotspots(
   );
 
   return signals.map((signal, index) => {
-    const point = coordinateFor(
+    const fallbackPoint = coordinateFor(
       signal.category,
       Math.max(0, signal.step - 1) + index,
     );
+    const point = {
+      x: validPercent(signal.x) ? signal.x : fallbackPoint.x,
+      y: validPercent(signal.y) ? signal.y : fallbackPoint.y,
+    };
     return {
       id: signal.id,
       personaId: signal.personaId,
@@ -38,4 +44,8 @@ export function buildLiveVisualHotspots(
       recommendation: signal.recommendation,
     };
   });
+}
+
+function validPercent(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
 }
