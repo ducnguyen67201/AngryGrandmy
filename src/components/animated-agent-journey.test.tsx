@@ -70,4 +70,15 @@ describe("AnimatedAgentJourney", () => {
 
     expect(screen.getAllByText("Queued")).toHaveLength(4);
   });
+
+  it("shows an independent computer-use agent inside every browser window", () => {
+    render(createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }));
+
+    expect(screen.getAllByLabelText(/computer-use agent/i)).toHaveLength(5);
+    expect(screen.getByText("Scanning results")).toBeInTheDocument();
+    expect(screen.getByText("Comparing options")).toBeInTheDocument();
+    expect(screen.getByText("Entering details")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for context")).toBeInTheDocument();
+    expect(screen.getByText("Reviewing summary")).toBeInTheDocument();
+  });
 });
