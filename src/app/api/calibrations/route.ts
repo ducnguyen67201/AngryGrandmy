@@ -15,9 +15,12 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 const ALLOWED_MEDIA = new Set(["video/webm", "video/mp4"]);
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 export async function POST(request: NextRequest) {
   try {
+    assertSameOrigin(request);
+    enforceRateLimit(request);
     const form = await request.formData();
     const submission = validateCalibrationSubmission({
       testerName: readText(form, "testerName"),
@@ -37,6 +40,7 @@ export async function POST(request: NextRequest) {
     const frames = parseFrames(form.get("frames"));
     const bytes = Buffer.from(await video.arrayBuffer());
     const mimeType = video.type as "video/webm" | "video/mp4";
+    assertMediaSignature(bytes, mimeType);
     const id = `cal-${randomUUID()}`;
     const now = new Date().toISOString();
     const media = await saveCalibrationMedia({
@@ -74,6 +78,46 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     return validationFailure(error);
+  }
+}
+
+function assertMediaSignature(
+  bytes: Buffer,
+  mimeType: "video/webm" | "video/mp4",
+) {
+  const isWebm =
+    bytes.length >= 4 &&
+    bytes[0] === 0x1a &&
+    bytes[1] === 0x45 &&
+    bytes[2] === 0xdf &&
+    bytes[3] === 0xa3;
+  const isMp4 =
+    bytes.length >= 12 && bytes.subarray(4, 8).toString("ascii") === "ftyp";
+  if ((mimeType === "video/webm" && !isWebm) || (mimeType === "video/mp4" && !isMp4)) {
+    throw new Error("The recording content does not match its declared video type.");
+  }
+}
+
+function assertSameOrigin(request: NextRequest) {
+  if (!(request.headers instanceof Headers) || !request.url) return;
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) {
+    throw new Error("Cross-origin calibration uploads are not allowed.");
+  }
+}
+
+function enforceRateLimit(request: NextRequest) {
+  if (!(request.headers instanceof Headers)) return;
+  const key = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  const now = Date.now();
+  const existing = rateBuckets.get(key);
+  const bucket = !existing || existing.resetAt <= now
+    ? { count: 0, resetAt: now + 10 * 60_000 }
+    : existing;
+  bucket.count += 1;
+  rateBuckets.set(key, bucket);
+  if (bucket.count > 8) {
+    throw new Error("Too many calibration uploads. Try again later.");
   }
 }
 
