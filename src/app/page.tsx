@@ -20,6 +20,7 @@ import type {
   UsabilityReport,
   VisualAgentState,
 } from "@/lib/schemas/run";
+import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -127,6 +128,7 @@ export default function Home() {
   const pendingResultIds = useRef(new Set<string>());
   const lastReportKey = useRef<string | null>(null);
   const liveMode = snapshot.phase === "running";
+  const panelFeedback = getPanelFeedback({ snapshot, loading, dispatching });
   const activeSessions = useMemo(
     () =>
       snapshot.sessions.filter(
@@ -722,14 +724,66 @@ export default function Home() {
               }}
               value={objective}
             />
+            <section
+              aria-live="polite"
+              className={`rounded-lg border p-4 shadow-sm ${
+                panelFeedback.tone === "ready"
+                  ? "border-mint/45 bg-mint/12"
+                  : panelFeedback.tone === "planning" || panelFeedback.tone === "dispatching"
+                    ? "border-brass/45 bg-brass/12"
+                    : panelFeedback.tone === "running"
+                      ? "border-blue-400/40 bg-blue-100/45"
+                      : panelFeedback.tone === "complete"
+                        ? "border-ink/12 bg-white"
+                        : "border-ink/10 bg-white/56"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-ink/45">
+                    Next step
+                  </p>
+                  <h3 className="mt-1 text-xl font-black">{panelFeedback.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-ink/68">
+                    {panelFeedback.description}
+                  </p>
+                </div>
+                <Sparkles
+                  className={
+                    panelFeedback.tone === "ready"
+                      ? "text-mint"
+                      : panelFeedback.tone === "planning" || panelFeedback.tone === "dispatching"
+                        ? "animate-pulse text-brass"
+                        : "text-ink/30"
+                  }
+                  size={24}
+                />
+              </div>
+              {panelFeedback.personaNames.length > 0 ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {panelFeedback.personaNames.map((name) => (
+                    <span
+                      className="rounded-full border border-ink/10 bg-white px-3 py-1 text-xs font-black text-ink/70"
+                      key={name}
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </section>
             <button
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md border border-ink/18 bg-white px-5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-55"
+              className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-md border px-5 font-bold transition disabled:cursor-not-allowed disabled:opacity-55 ${
+                panelFeedback.tone === "ready"
+                  ? "border-mint bg-mint text-ink shadow-[0_12px_28px_rgba(98,196,155,0.22)] hover:-translate-y-0.5"
+                  : "border-ink/18 bg-white text-ink"
+              }`}
               disabled={loading || dispatching || !authorized || !snapshot.analysis}
               onClick={handleLaunch}
               type="button"
             >
               <Play size={18} />
-              {dispatching ? "Dispatching..." : "Dispatch Grandmas"}
+              {panelFeedback.dispatchLabel}
             </button>
             <label className="inline-flex items-start gap-3 text-sm leading-6 text-ink/70">
               <input
