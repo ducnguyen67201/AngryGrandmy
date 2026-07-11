@@ -47,3 +47,10 @@ This iteration uses Gradium's existing REST TTS response and a browser audio que
 - RED checkpoint: `e3ea502 test: reproduce silent completed-run voice` failed both text-fallback and completed-run activation guarantees.
 - GREEN checkpoint: `1859d1f fix: play live voice without provider audio` preserves text-only queue items, plays them with `speechSynthesis`, speaks the current finding on activation, cancels browser speech when voice is stopped, and exposes `Speak this finding again`.
 - Verification: `pnpm test` passes 42 files / 143 tests; `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
+
+### Replay-start follow-up
+
+- The second screenshot showed replay advancing at frame 2/46 while the status remained `Preparing synchronized replay narration...`; this proved no queue item was created at replay start.
+- RED checkpoint: `bd5fe30 test: reproduce silent replay startup` requires the visible persona line to prime replay before frame narration arrives.
+- GREEN checkpoint: `1d25127 fix: prime replay narration immediately` clears stale frame markers, queues an immediate browser-spoken primer, identifies `Browser speaking` versus `Gradium speaking` in the status, and converts provider/network failures into text speech.
+- Verification: 42 files / 144 tests pass; focused voice coverage is 100% lines/functions and above 92% statements/branches; typecheck, lint, build, and audit pass.
