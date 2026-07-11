@@ -6,6 +6,7 @@ import {
   parseLabSearchParams,
   parsePersistedLabState,
   PERSISTED_LAB_STATE_VERSION,
+  shouldRestorePersistedRun,
 } from "./lab-state";
 
 describe("lab state persistence", () => {
@@ -69,5 +70,51 @@ describe("lab state persistence", () => {
         "?url=javascript%3Aalert(1)&objective=%20%20&testers=9",
       ),
     ).toEqual({});
+  });
+
+  it("restores dispatched sessions when the share URL still matches the saved run", () => {
+    const persisted = buildPersistedLabState({
+      snapshot: { ...createDemoRun(), phase: "running" },
+      targetUrl: "https://gettrustloop.app/",
+      objective: "Find the primary workflow.",
+      selectedPresetId: null,
+      testerCount: 2,
+      authorized: true,
+      statusLine: "Two H sessions running.",
+    });
+
+    expect(
+      shouldRestorePersistedRun(
+        persisted,
+        parseLabSearchParams(
+          buildLabSearchParams({
+            targetUrl: persisted.targetUrl,
+            objective: persisted.objective,
+            testerCount: 2,
+          }),
+        ),
+      ),
+    ).toBe(true);
+    expect(persisted.snapshot.sessions.length).toBeGreaterThan(0);
+  });
+
+  it("starts a new configuration when the URL differs from the saved run", () => {
+    const persisted = buildPersistedLabState({
+      snapshot: { ...createDemoRun(), phase: "running" },
+      targetUrl: "https://gettrustloop.app/",
+      objective: "Find the primary workflow.",
+      selectedPresetId: null,
+      testerCount: 2,
+      authorized: true,
+      statusLine: "Two H sessions running.",
+    });
+
+    expect(
+      shouldRestorePersistedRun(persisted, {
+        targetUrl: "https://another-product.example/",
+        objective: persisted.objective,
+        testerCount: 2,
+      }),
+    ).toBe(false);
   });
 });
