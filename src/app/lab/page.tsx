@@ -126,6 +126,7 @@ const DEMO_PRESETS = [
 
 const DEFAULT_OBJECTIVE =
   "Find the primary user workflow and stop before an irreversible action.";
+const LAUNCHING_SESSION_PREFIX = "launching-";
 
 export default function Home() {
   const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createInitialRun());
@@ -153,6 +154,8 @@ export default function Home() {
   const pendingResultIds = useRef(new Set<string>());
   const lastReportKey = useRef<string | null>(null);
   const liveEventCursors = useRef(new Map<string, number>());
+  const sessionsRef = useRef(snapshot.sessions);
+  sessionsRef.current = snapshot.sessions;
   const liveMode = snapshot.phase === "running";
   const customPersonaCount =
     snapshot.analysis?.personas.filter((persona) => persona.id.startsWith("custom-")).length ?? 0;
@@ -170,6 +173,13 @@ export default function Home() {
       ),
     [snapshot.sessions],
   );
+  const sessionKey = snapshot.sessions
+    .map((session) => `${session.sessionId}:${session.personaId}`)
+    .join("|");
+  const activeSessionKey = activeSessions
+    .filter((session) => !session.sessionId.startsWith(LAUNCHING_SESSION_PREFIX))
+    .map((session) => `${session.sessionId}:${session.personaId}`)
+    .join("|");
   const sessionsNeedingResults = useMemo(
     () =>
       snapshot.sessions.filter(
@@ -218,6 +228,7 @@ export default function Home() {
     snapshot.sessions[0];
   const liveNarration = [...liveEvents].reverse().find((event) => event.type === "narration" && event.personaId === selectedPersona?.id);
   const liveFrustration = [...liveEvents].reverse().find((event) => event.type === "frustration" && event.personaId === selectedPersona?.id);
+  const hasLiveNarration = Boolean(liveNarration?.text);
   const selectedNarration =
     liveNarration?.text ??
     selectedSession?.finding?.frictionEvents[0]?.narratedObservation ??
@@ -328,13 +339,18 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!liveMode || activeSessions.length === 0) return;
+    if (!liveMode || !activeSessionKey) return;
 
     let cancelled = false;
 
     async function pollSessions() {
+      const targets = sessionsRef.current.filter(
+        (session) =>
+          !TERMINAL_STATUSES.has(session.status) &&
+          !session.sessionId.startsWith(LAUNCHING_SESSION_PREFIX),
+      );
       const updates = await Promise.all(
-        activeSessions.map(async (session) => {
+        targets.map(async (session) => {
           try {
             const params = new URLSearchParams({
               sessionId: session.sessionId,
@@ -375,10 +391,124 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeSessions, liveMode]);
+  }, [activeSessionKey, liveMode]);
+  useEffect(() => {
+    if (!sessionKey) return;
+    let cancelled = false;
 
+    async function poll() {
+      const sessions = sessionsRef.current.filter(
+        (session) => !session.sessionId.startsWith(LAUNCHING_SESSION_PREFIX),
+      );
+      const batches = await Promise.all(
+        sessions.map(async (session) => {
+          const after = liveEventCursors.current.get(session.sessionId) ?? 0;
+          const query = new URLSearchParams({
+            sessionId: session.sessionId,
+            personaId: session.personaId,
+            after: String(after),
+            events: "1",
+          });
+          try {
+            const response = await fetch(`/api/session-status?${query}`);
+            const payload = (await response.json()) as {
+              data?: AgentRuntimeEvent[];
+              meta?: { cursor?: number };
+            };
+            liveEventCursors.current.set(
+              session.sessionId,
+              payload.meta?.cursor ?? after,
+            );
+            return payload.data ?? [];
+          } catch {
+            return [];
+          }
+        }),
+      );
+      if (cancelled) return;
 
-  useEffect(()=>{if(snapshot.sessions.length===0)return;let cancelled=false;async function poll(){const batches=await Promise.all(snapshot.sessions.map(async session=>{const after=liveEventCursors.current.get(session.sessionId)??0,query=new URLSearchParams({sessionId:session.sessionId,personaId:session.personaId,after:String(after),events:"1"});try{const response=await fetch(`/api/session-status?${query}`),payload=await response.json()as{data?:AgentRuntimeEvent[];meta?:{cursor?:number}};liveEventCursors.current.set(session.sessionId,payload.meta?.cursor??after);return payload.data??[]}catch{return[]}}));if(cancelled)return;const incoming=batches.flat();if(incoming.length===0)return;setLiveEvents(current=>{const known=new Set(current.map(event=>event.id));return[...current,...incoming.filter(event=>!known.has(event.id))]});for(const event of incoming){const persona=snapshot.analysis?.personas.find(item=>item.id===event.personaId),session=snapshot.sessions.find(item=>item.personaId===event.personaId);if(!persona||!session)continue;if(event.type==="narration"&&event.personaId===selectedPersona?.id&&event.text){const response=await fetch("/api/voice-reaction",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({personaId:persona.id,voiceSlot:persona.voiceSlot,text:event.text})}),payload=await response.json()as VoiceReactionPayload,audio=payload.data?.audioBase64?`data:${payload.data.audioMime??"audio/wav"};base64,${payload.data.audioBase64}`:payload.data?.audioUrl;if(audio)void new Audio(audio).play().catch(()=>undefined)}if(event.type==="frustration"){const friction={step:event.step,category:event.category??"clarity",severity:event.severity??3,observation:event.observation??"Barrier",visibleEvidence:event.visibleEvidence??"Live evidence",recommendation:event.recommendation??"Remove barrier",narratedObservation:event.observation??"This is frustrating",recovered:false};await fetch("/api/report?fixJob=1",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({runId:snapshot.id,sessionId:session.sessionId,personaId:persona.id,personaName:persona.displayName,productUrl:event.currentUrl??snapshot.url,objective:snapshot.objective??objective,frustrationEventId:event.id,frustration:friction})});setFixRequestIds(current=>new Set(current).add(event.id))}}}const timer=window.setInterval(poll,2500);void poll();return()=>{cancelled=true;window.clearInterval(timer)}},[objective,selectedPersona?.id,snapshot.analysis?.personas,snapshot.id,snapshot.objective,snapshot.sessions,snapshot.url]);
+      const incoming = batches.flat();
+      if (incoming.length === 0) return;
+      setLiveEvents((current) => {
+        const known = new Set(current.map((event) => event.id));
+        return [...current, ...incoming.filter((event) => !known.has(event.id))];
+      });
+
+      for (const event of incoming) {
+        const persona = snapshot.analysis?.personas.find(
+          (item) => item.id === event.personaId,
+        );
+        const session = sessionsRef.current.find(
+          (item) => item.personaId === event.personaId,
+        );
+        if (!persona || !session) continue;
+
+        if (
+          event.type === "narration" &&
+          event.personaId === selectedPersona?.id &&
+          event.text
+        ) {
+          const response = await fetch("/api/voice-reaction", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              personaId: persona.id,
+              voiceSlot: persona.voiceSlot,
+              text: event.text,
+            }),
+          });
+          const payload = (await response.json()) as VoiceReactionPayload;
+          const audio = payload.data?.audioBase64
+            ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
+            : payload.data?.audioUrl;
+          if (audio) void new Audio(audio).play().catch(() => undefined);
+        }
+
+        if (event.type === "frustration") {
+          const friction = {
+            step: event.step,
+            category: event.category ?? "clarity",
+            severity: event.severity ?? 3,
+            observation: event.observation ?? "Barrier",
+            visibleEvidence: event.visibleEvidence ?? "Live evidence",
+            recommendation: event.recommendation ?? "Remove barrier",
+            narratedObservation: event.observation ?? "This is frustrating",
+            recovered: false,
+          };
+          await fetch("/api/report?fixJob=1", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              runId: snapshot.id,
+              sessionId: session.sessionId,
+              personaId: persona.id,
+              personaName: persona.displayName,
+              productUrl: event.currentUrl ?? snapshot.url,
+              objective: snapshot.objective ?? objective,
+              frustrationEventId: event.id,
+              frustration: friction,
+            }),
+          });
+          setFixRequestIds((current) => new Set(current).add(event.id));
+        }
+      }
+    }
+
+    const timer = window.setInterval(poll, 6000);
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    objective,
+    selectedPersona?.id,
+    snapshot.analysis?.personas,
+    snapshot.id,
+    snapshot.objective,
+    sessionKey,
+    snapshot.url,
+  ]);
 
   useEffect(() => {
     if (!liveMode) return;
@@ -595,10 +725,47 @@ export default function Home() {
   }
 
   async function handleLaunch() {
+    if (!snapshot.analysis) return;
     setDispatching(true);
+    const beforeLaunch = snapshot;
     const customPersona = snapshot.analysis?.personas.find((persona) =>
       persona.id.startsWith("custom-"),
     );
+    const generatedPersonas = snapshot.analysis.personas
+      .filter((persona) => !persona.id.startsWith("custom-"))
+      .slice(0, testerCount);
+    const customPersonas = snapshot.analysis.personas.filter((persona) =>
+      persona.id.startsWith("custom-"),
+    );
+    const personasToLaunch = [...generatedPersonas, ...customPersonas];
+    const startedAt = new Date().toISOString();
+    const launchingSessions: NormalizedSession[] = personasToLaunch.map(
+      (persona) => ({
+        sessionId: `${LAUNCHING_SESSION_PREFIX}${persona.id}`,
+        personaId: persona.id,
+        status: "queued",
+        visualState: "launching",
+        eventCursor: 0,
+        stepCount: 0,
+        startedAt,
+        finishedAt: null,
+        agentViewUrl: null,
+        outcome: "unknown",
+        latestActionLabel: "Requesting H Company session",
+        finding: null,
+        errorCode: null,
+      }),
+    );
+    liveEventCursors.current.clear();
+    setLiveEvents([]);
+    setSnapshot((current) => ({
+      ...current,
+      phase: "running",
+      sessions: launchingSessions,
+      report: null,
+      error: null,
+      updatedAt: startedAt,
+    }));
     setStatusLine(
       `Launching ${selectedTesterCount} H Company computer-use session${selectedTesterCount === 1 ? "" : "s"}.`,
     );
@@ -636,6 +803,7 @@ export default function Home() {
         );
       }
     } catch (error) {
+      setSnapshot(beforeLaunch);
       setStatusLine(error instanceof Error ? error.message : "Could not launch H agents.");
     } finally {
       setDispatching(false);
@@ -1588,7 +1756,7 @@ export default function Home() {
         <div className="simple-header-actions">
         <div className="simple-header-status">
           <span className={liveMode && !runComplete ? "is-live" : ""} />
-          {runComplete ? "Run complete" : liveMode ? "H agents live" : snapshot.analysis ? "Ready to dispatch" : "New test"}
+          {dispatching ? "Connecting H agents" : runComplete ? "Run complete" : liveMode ? "H agents live" : snapshot.analysis ? "Ready to dispatch" : "New test"}
         </div>
         {isLiveView ? (
           <button
@@ -1742,12 +1910,12 @@ export default function Home() {
           <section className="live-room" aria-labelledby="live-room-title">
             <div className="live-room-heading">
               <div>
-                <p><Activity size={14} /> {activeSessions.length ? `${activeSessions.length} agents running` : "Run complete"}</p>
+                <p><Activity size={14} /> {dispatching ? `${launchingSessionsLabel(snapshot.sessions.length)} connecting` : activeSessions.length ? `${activeSessions.length} agents active` : "Run complete"}</p>
                 <h1 id="live-room-title">Watching {selectedPersona?.displayName}</h1>
               </div>
               <div className="provider-badges">
-                <span><i className={runComplete ? "done" : "connected"} />H Company · {replayMode ? "replay" : runComplete ? "complete" : "connected"}</span>
-                <span>Gradium · review voice</span>
+                <span><i className={runComplete ? "done" : "connected"} />H Company · {dispatching ? "connecting" : replayMode ? "replay" : runComplete ? "complete" : "status connected"}</span>
+                <span>Gradium · {hasLiveNarration ? "live event voice" : "persona/finding voice"}</span>
               </div>
             </div>
 
@@ -1793,10 +1961,10 @@ export default function Home() {
                   />
                   <div className="agent-cursor">↖</div>
                   <div className="thought-annotation">
-                    <span><Volume2 size={12} /> {runComplete ? "Reviewing aloud" : "Thinking aloud"}</span>
+                    <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
                     <blockquote>“{selectedNarration}”</blockquote>
                     <button disabled={voiceLoading || !selectedPersona} onClick={handleVoice} type="button">
-                      {voiceLoading ? "Preparing…" : "Hear voice"}
+                      {voiceLoading ? "Preparing…" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
                     </button>
                   </div>
                   {selectedFriction ? (
@@ -1816,8 +1984,13 @@ export default function Home() {
                 <div className="agent-action-bar">
                   <span className="agent-avatar">{selectedPersona?.displayName.charAt(0) ?? "?"}</span>
                   <div>
-                    <small>{runComplete ? "Evidence captured" : "Doing now"} · {selectedSession?.stepCount ?? 0} actions</small>
+                    <small>{runComplete ? "Evidence captured" : "H API status"} · {selectedSession?.stepCount ?? 0} steps</small>
                     <b>{selectedSession?.latestActionLabel ?? "Waiting to start"}</b>
+                    {!replayMode && !hasLiveNarration ? (
+                      <span className="live-feed-note">
+                        H has not published observation text through the REST events feed. Agent View is the exact live browser stream.
+                      </span>
+                    ) : null}
                   </div>
                   {selectedSession?.agentViewUrl ? (
                     <a href={selectedSession.agentViewUrl} rel="noreferrer" target="_blank">
@@ -1932,6 +2105,10 @@ function markResultFailure(session: NormalizedSession): NormalizedSession {
     latestActionLabel: "Finished, but result extraction failed",
     errorCode: "provider_failure",
   };
+}
+
+function launchingSessionsLabel(count: number): string {
+  return `${count} agent${count === 1 ? "" : "s"}`;
 }
 
 function createInitialRun(): RunSnapshot {
