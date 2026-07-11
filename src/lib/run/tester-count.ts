@@ -1,4 +1,8 @@
-import type { PersonaScenario, ProductAnalysis } from "@/lib/schemas/run";
+import type {
+  NormalizedSession,
+  PersonaScenario,
+  ProductAnalysis,
+} from "@/lib/schemas/run";
 
 export const DEFAULT_TESTER_COUNT = 4;
 export const TESTER_COUNT_OPTIONS = [1, 2, 3, 4] as const;
@@ -24,4 +28,18 @@ export function limitPersonasForTesterCount(
   testerCount: TesterCount,
 ): PersonaScenario[] {
   return analysis.personas.slice(0, testerCount);
+}
+
+export function getDispatchedPersonas(
+  analysis: ProductAnalysis | null,
+  sessions: readonly Pick<NormalizedSession, "personaId">[],
+): PersonaScenario[] {
+  if (!analysis || sessions.length === 0) return [];
+
+  const dispatchedPersonaIds = new Set(
+    sessions.map((session) => session.personaId),
+  );
+  return analysis.personas.filter((persona) =>
+    dispatchedPersonaIds.has(persona.id),
+  );
 }

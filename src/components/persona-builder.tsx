@@ -46,6 +46,7 @@ export function PersonaBuilder({
   const [digitalConfidence, setDigitalConfidence] =
     useState<PersonaDraft["digitalConfidence"]>("low");
   const [createdName, setCreatedName] = useState<string | null>(null);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,10 +55,19 @@ export function PersonaBuilder({
       description: description.trim(),
       digitalConfidence,
     };
-    if (disabled || !draft.displayName || draft.description.length < 12) return;
+    if (disabled) return;
+    if (!draft.displayName) {
+      setValidationMessage("Enter a persona name to continue.");
+      return;
+    }
+    if (draft.description.length < 12) {
+      setValidationMessage("Describe the persona in at least 12 characters.");
+      return;
+    }
 
     onCreate(draft);
     setCreatedName(draft.displayName);
+    setValidationMessage(null);
   }
 
   function applySuggestion(suggestion: PersonaDraft) {
@@ -66,6 +76,7 @@ export function PersonaBuilder({
     setDescription(suggestion.description);
     setDigitalConfidence(suggestion.digitalConfidence);
     setCreatedName(null);
+    setValidationMessage(null);
   }
 
   return (
@@ -96,8 +107,12 @@ export function PersonaBuilder({
           <label>
             Persona name
             <input
+              aria-invalid={validationMessage?.includes("name") || undefined}
               maxLength={40}
-              onChange={(event) => setDisplayName(event.target.value)}
+              onChange={(event) => {
+                setDisplayName(event.target.value);
+                setValidationMessage(null);
+              }}
               placeholder="e.g. Alex"
               value={displayName}
             />
@@ -119,8 +134,12 @@ export function PersonaBuilder({
         <label>
           Describe your persona
           <textarea
+            aria-invalid={validationMessage?.includes("Describe") || undefined}
             maxLength={1200}
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={(event) => {
+              setDescription(event.target.value);
+              setValidationMessage(null);
+            }}
             placeholder="Who are they, what device do they use, and what makes them hesitate?"
             value={description}
           />
@@ -129,14 +148,14 @@ export function PersonaBuilder({
           <p aria-live="polite">
             {disabled
               ? "Generate the panel first, then add your persona."
+              : validationMessage
+                ? validationMessage
               : createdName
                 ? `${createdName} is ready to join the panel.`
                 : "This persona will join the suggested testers."}
           </p>
           <button
-            disabled={
-              disabled || !displayName.trim() || description.trim().length < 12
-            }
+            disabled={disabled}
             type="submit"
           >
             <Sparkles size={15} /> Create persona

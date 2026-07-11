@@ -17,6 +17,7 @@ const PersistedLabStateSchema = z.object({
   selectedPresetId: z.string().nullable(),
   testerCount: z.number().int().min(1).max(4).default(DEFAULT_TESTER_COUNT),
   authorized: z.boolean(),
+  personasAccepted: z.boolean().default(false),
   statusLine: z.string(),
   savedAt: z.string().datetime(),
 });
@@ -69,6 +70,25 @@ export function buildLabSearchParams({
   return `?${params.toString()}`;
 }
 
+export function shouldRestorePersistedRun(
+  persisted: PersistedLabState,
+  query: LabSearchState,
+): boolean {
+  if (
+    query.targetUrl &&
+    new URL(query.targetUrl).href !== new URL(persisted.targetUrl).href
+  ) {
+    return false;
+  }
+  if (query.objective && query.objective.trim() !== persisted.objective.trim()) {
+    return false;
+  }
+  if (query.testerCount && query.testerCount !== persisted.testerCount) {
+    return false;
+  }
+  return true;
+}
+
 export function buildPersistedLabState({
   snapshot,
   targetUrl,
@@ -76,6 +96,7 @@ export function buildPersistedLabState({
   selectedPresetId,
   testerCount,
   authorized,
+  personasAccepted = false,
   statusLine,
 }: {
   snapshot: RunSnapshot;
@@ -84,6 +105,7 @@ export function buildPersistedLabState({
   selectedPresetId: string | null;
   testerCount: number;
   authorized: boolean;
+  personasAccepted?: boolean;
   statusLine: string;
 }): PersistedLabState {
   return PersistedLabStateSchema.parse({
@@ -94,6 +116,7 @@ export function buildPersistedLabState({
     selectedPresetId,
     testerCount,
     authorized,
+    personasAccepted,
     statusLine,
     savedAt: new Date().toISOString(),
   });
@@ -107,4 +130,10 @@ export function parsePersistedLabState(value: string | null): PersistedLabState 
   } catch {
     return null;
   }
+}
+
+export function clearPersistedLabState(
+  storage: Pick<Storage, "removeItem">,
+): void {
+  storage.removeItem(PERSISTED_LAB_STATE_KEY);
 }

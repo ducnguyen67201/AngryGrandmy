@@ -48,4 +48,20 @@ describe("PersonaBuilder", () => {
     expect(screen.getByRole("button", { name: /create persona/i })).toBeDisabled();
     expect(screen.getByText(/generate the panel first/i)).toBeInTheDocument();
   });
+
+  it("lets users submit an incomplete draft and explains the missing name", () => {
+    const onCreate = vi.fn();
+    render(<PersonaBuilder disabled={false} onCreate={onCreate} />);
+
+    fireEvent.change(screen.getByLabelText(/describe your persona/i), {
+      target: { value: "An older grandma who is unfamiliar with apps." },
+    });
+
+    const createButton = screen.getByRole("button", { name: /create persona/i });
+    expect(createButton).toBeEnabled();
+    fireEvent.click(createButton);
+
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(screen.getByText(/enter a persona name/i)).toBeInTheDocument();
+  });
 });

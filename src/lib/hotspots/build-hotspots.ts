@@ -104,7 +104,7 @@ export function summarizeHotspots(hotspots: VisualHotspot[]) {
   );
 }
 
-function coordinateFor(category: FrictionEvent["category"], index: number) {
+export function coordinateFor(category: FrictionEvent["category"], index: number) {
   const lane = CATEGORY_COORDINATES[category];
   return lane[index % lane.length];
 }

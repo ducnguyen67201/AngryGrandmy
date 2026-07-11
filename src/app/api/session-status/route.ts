@@ -6,6 +6,7 @@ import {
   getHCompanySessionStatus,
   isHCompanyConfigured,
 } from "@/lib/integrations/h-company";
+import { buildHFrameProxyUrl } from "@/lib/security/h-frame-source";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,21 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    if(eventsMode){const events=await getHCompanySessionEvents(sessionId,personaId);return ok(events.filter(e=>e.cursor>after),{mode:"h-company-events",cursor:events.at(-1)?.cursor??after})}
+    if (eventsMode) {
+      const batch = await getHCompanySessionEvents(sessionId, personaId, after);
+      const browserEvents = batch.events.map((event) =>
+        event.type === "viewport" && event.imageUrl?.startsWith("https://")
+          ? {
+              ...event,
+              imageUrl: buildHFrameProxyUrl(sessionId, event.imageUrl),
+            }
+          : event,
+      );
+      return ok(browserEvents, {
+        mode: "h-company-changes",
+        cursor: batch.cursor,
+      });
+    }
     return ok(await getHCompanySessionStatus(sessionId, personaId), {
       mode: "h-company",
     });

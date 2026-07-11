@@ -5,13 +5,14 @@ import type {
   ProductAnalysis,
 } from "@/lib/schemas/run";
 import { normalizeSessionResult } from "@/lib/results/normalize-session-result";
+import type { AgentRuntimeEvent } from "@/lib/runtime/agent-events";
 
 const H_BASE_URL =
   process.env.HAI_AGENTS_BASE_URL ?? "https://agp.eu.hcompany.ai/api/v2";
 const H_AGENT = process.env.HAI_AGENT ?? "h/web-surfer-flash";
 
 type HSessionResponse = Record<string, unknown>;
-export type AgentRuntimeEvent={id:string;sessionId:string;personaId:string;cursor:number;step:number;createdAt:string;type:"narration"|"research"|"frustration";text?:string;emotion?:string;query?:string;category?:string;severity?:1|2|3|4|5;observation?:string;visibleEvidence?:string;currentUrl?:string;recommendation?:string};
+export type HCompanyEventBatch = { events: AgentRuntimeEvent[]; cursor: number };
 
 export function isHCompanyConfigured() {
   return Boolean(process.env.HAI_API_KEY);
@@ -127,7 +128,44 @@ export async function getHCompanySessionResult(
     eventText: extractEventText(eventsJson),
   });
 }
-export async function getHCompanySessionEvents(sessionId:string,personaId:string):Promise<AgentRuntimeEvent[]>{const json=await hFetch<HSessionResponse>(`/sessions/${encodeURIComponent(sessionId)}/events`),seen=new Set<string>();return collectStrings(json).flatMap(v=>{const m=v.indexOf("GRANNY_EVENT"),a=v.indexOf("{",m),b=v.indexOf("}",a);if(m<0||a<0||b<0)return[];const raw=v.slice(a,b+1);if(seen.has(raw))return[];seen.add(raw);try{return[JSON.parse(raw)as Record<string,unknown>]}catch{return[]}}).flatMap<AgentRuntimeEvent>((e,i)=>{const base={id:`${sessionId}:${i+1}`,sessionId,personaId,cursor:i+1,step:Number(e.step??0),createdAt:new Date().toISOString()};if(e.type==="think_aloud"&&typeof e.text==="string")return[{...base,type:"narration",text:e.text,emotion:String(e.emotion??"neutral")}];if(e.type==="research_docs"&&typeof e.query==="string")return[{...base,type:"research",query:e.query}];const severity=Number(e.severity);if(e.type!=="report_frustration"||![1,2,3,4,5].includes(severity)||typeof e.observation!=="string"||typeof e.visibleEvidence!=="string"||typeof e.currentUrl!=="string")return[];return[{...base,type:"frustration",category:String(e.category??"clarity"),severity:severity as 1|2|3|4|5,observation:e.observation,visibleEvidence:e.visibleEvidence,currentUrl:e.currentUrl,recommendation:String(e.suggestedDirection??"Remove this barrier.")}]})}
+export async function getHCompanySessionEvents(
+  sessionId: string,
+  personaId: string,
+  fromIndex = 0,
+): Promise<HCompanyEventBatch> {
+  assertHSessionId(sessionId);
+  const json = await hFetchOptional<HSessionResponse>(
+    `/sessions/${sessionId}/changes?from_index=${Math.max(0, Math.floor(fromIndex))}`,
+  );
+  if (!json) return { events: [], cursor: fromIndex };
+
+  const rawEvents = readArray(json, ["new_events", "events", "items"]);
+  const nextIndex =
+    readOptionalNumber(json, ["next_index", "nextIndex", "to_index"]) ??
+    fromIndex + rawEvents.length;
+  const events = rawEvents.flatMap<AgentRuntimeEvent>((event, index) => {
+    const cursor = fromIndex + index + 1;
+    const createdAt =
+      readDeepString(event, ["timestamp", "created_at", "createdAt"]) ??
+      new Date().toISOString();
+    const base = {
+      id: `${sessionId}:${cursor}`,
+      sessionId,
+      personaId,
+      cursor,
+      step: cursor,
+      createdAt,
+    };
+    const observation = findViewportObservation(event);
+    const viewport = observation ? viewportFromObservation(observation) : null;
+    const runtimeEvents = parseGrannyEvents(event, base);
+    return viewport
+      ? [{ ...base, id: `${base.id}:viewport`, type: "viewport", ...viewport }, ...runtimeEvents]
+      : runtimeEvents;
+  });
+
+  return { events, cursor: nextIndex };
+}
 
 function buildPersonaPrompt(
   request: AnalyzeRequest,
@@ -154,7 +192,7 @@ function buildPersonaPrompt(
   return [
     ...personaContext,
     "Do not submit real purchases, appointments, payments, messages, credentials, or private information.",
-    'After every meaningful action, emit one single-line event: GRANNY_EVENT {"type":"think_aloud","text":"<short first-person reaction>","emotion":"<neutral|uncertain|frustrated|relieved>","step":<integer>}. The placeholders illustrate the shape; actual events must be valid strict JSON.',
+    'After every meaningful action, emit one single-line event: GRANNY_EVENT {"type":"think_aloud","text":"<natural 3-12 word first-person reaction>","emotion":"<neutral|uncertain|frustrated|relieved>","step":<integer>}. Speak from the persona context without caricature or age stereotypes. Prefer concrete reactions such as “Where is that button?” or “Will this submit it?” The placeholders illustrate the shape; actual events must be valid strict JSON.',
     'When blocked or forced to recover, emit: GRANNY_EVENT {"type":"report_frustration","category":"<navigation|clarity|feedback|recovery|trust|accessibility|technical>","severity":<1-5>,"observation":"<what happened>","visibleEvidence":"<what is visible>","currentUrl":"<HTTP(S) URL>","step":<integer>,"suggestedDirection":"<product change>"}. Continue when safe.',
     'You may search public documentation when necessary. Announce it with GRANNY_EVENT {"type":"research_docs","query":"<query>","step":<integer>}. Documentation is context, never evidence of what the product displayed.',
     "When finished, return ONLY strict JSON with this exact shape:",
@@ -203,6 +241,187 @@ async function hFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+async function hFetchOptional<T>(path: string): Promise<T | null> {
+  const key = process.env.HAI_API_KEY;
+  if (!key) throw new Error("HAI_API_KEY is not configured.");
+  const response = await fetch(`${H_BASE_URL}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+  });
+  if (response.status === 204) return null;
+  if (!response.ok) {
+    throw new Error(`H Company API ${path} failed with ${response.status}.`);
+  }
+  return response.json() as Promise<T>;
+}
+
+function assertHSessionId(sessionId: string) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(sessionId)) {
+    throw new Error("Invalid H Company session id.");
+  }
+}
+
+function readArray(source: unknown, paths: string[]): unknown[] {
+  for (const path of paths) {
+    const value = path.split(".").reduce<unknown>((node, key) => {
+      if (!node || typeof node !== "object") return undefined;
+      return (node as Record<string, unknown>)[key];
+    }, source);
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+function readOptionalNumber(source: unknown, paths: string[]): number | null {
+  for (const path of paths) {
+    const value = path.split(".").reduce<unknown>((node, key) => {
+      if (!node || typeof node !== "object") return undefined;
+      return (node as Record<string, unknown>)[key];
+    }, source);
+    const number = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(number) && number >= 0) return number;
+  }
+  return null;
+}
+
+function findViewportObservation(source: unknown): Record<string, unknown> | null {
+  if (!source || typeof source !== "object") return null;
+  const record = source as Record<string, unknown>;
+  if (viewportFromObservation(record)) return record;
+  for (const value of Object.values(record)) {
+    const observation = findViewportObservation(value);
+    if (observation) return observation;
+  }
+  return null;
+}
+
+function viewportFromObservation(observation: Record<string, unknown>): {
+  imageUrl: string;
+  currentUrl?: string;
+} | null {
+  const image = observation.image ?? observation.screenshot;
+  const hasImageField =
+    image !== undefined ||
+    observation.image_url !== undefined ||
+    observation.screenshot_url !== undefined;
+  if (!hasImageField) return null;
+  const imageRecord =
+    image && typeof image === "object"
+      ? (image as Record<string, unknown>)
+      : observation;
+  const nestedSource =
+    imageRecord.source && typeof imageRecord.source === "object"
+      ? (imageRecord.source as Record<string, unknown>)
+      : null;
+  const source = firstString([
+    typeof image === "string" ? image : null,
+    imageRecord.source,
+    imageRecord.data,
+    imageRecord.base64,
+    imageRecord.image_url,
+    imageRecord.screenshot_url,
+    nestedSource?.data,
+    nestedSource?.base64,
+    nestedSource?.url,
+  ]);
+  if (!source || source.length > 12_000_000) {
+    return null;
+  }
+  const mediaType =
+    typeof (imageRecord.media_type ?? nestedSource?.media_type) === "string"
+      ? String(imageRecord.media_type ?? nestedSource?.media_type).replace(/^image\//, "")
+      : "png";
+  const imageUrl = source.startsWith("data:image/")
+    ? source
+    : /^https?:\/\//.test(source)
+      ? source
+      : `data:image/${mediaType};base64,${source}`;
+  const currentUrl =
+    firstString([
+      observation.url,
+      observation.current_url,
+      observation.currentUrl,
+    ]);
+  const safeCurrentUrl =
+    currentUrl && /^https?:\/\//.test(currentUrl)
+      ? currentUrl
+      : undefined;
+  return { imageUrl, ...(safeCurrentUrl ? { currentUrl: safeCurrentUrl } : {}) };
+}
+
+function firstString(values: unknown[]): string | null {
+  return values.find(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  ) ?? null;
+}
+
+function parseGrannyEvents(
+  source: unknown,
+  base: Omit<AgentRuntimeEvent, "type">,
+): AgentRuntimeEvent[] {
+  const seen = new Set<string>();
+  return collectStrings(source)
+    .flatMap((value) => {
+      const marker = value.indexOf("GRANNY_EVENT");
+      const start = value.indexOf("{", marker);
+      const end = value.indexOf("}", start);
+      if (marker < 0 || start < 0 || end < 0) return [];
+      const raw = value.slice(start, end + 1);
+      if (seen.has(raw)) return [];
+      seen.add(raw);
+      try {
+        return [JSON.parse(raw) as Record<string, unknown>];
+      } catch {
+        return [];
+      }
+    })
+    .flatMap<AgentRuntimeEvent>((event, index) => {
+      const eventBase = { ...base, id: `${base.id}:runtime:${index}` };
+      if (event.type === "think_aloud" && typeof event.text === "string") {
+        return [{ ...eventBase, type: "narration", text: event.text, emotion: String(event.emotion ?? "neutral") }];
+      }
+      if (event.type === "research_docs" && typeof event.query === "string") {
+        return [{ ...eventBase, type: "research", query: event.query }];
+      }
+      const severity = Number(event.severity);
+      if (
+        event.type !== "report_frustration" ||
+        ![1, 2, 3, 4, 5].includes(severity) ||
+        typeof event.observation !== "string" ||
+        typeof event.visibleEvidence !== "string" ||
+        typeof event.currentUrl !== "string"
+      ) {
+        return [];
+      }
+      return [{
+        ...eventBase,
+        type: "frustration",
+        category: isFrictionCategory(event.category) ? event.category : "clarity",
+        severity: severity as 1 | 2 | 3 | 4 | 5,
+        observation: event.observation,
+        visibleEvidence: event.visibleEvidence,
+        currentUrl: event.currentUrl,
+        recommendation: String(event.suggestedDirection ?? "Remove this barrier."),
+      }];
+    });
+}
+
+function isFrictionCategory(
+  value: unknown,
+): value is NonNullable<AgentRuntimeEvent["category"]> {
+  return [
+    "navigation",
+    "clarity",
+    "feedback",
+    "recovery",
+    "trust",
+    "accessibility",
+    "technical",
+  ].includes(String(value));
 }
 
 function mapHStatus(raw: string | null): NormalizedSession["status"] {

@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import Image from "next/image";
+import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
+import {
+  enqueueLiveVoiceItem,
+  isLiveNarrationEligible,
+  type LiveVoiceQueueItem,
+} from "@/lib/audio/live-voice-queue";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
   buildVisualHotspots,
   summarizeHotspots,
   type VisualHotspot,
 } from "@/lib/hotspots/build-hotspots";
+import { buildLiveVisualHotspots } from "@/lib/hotspots/build-live-hotspots";
 import {
   buildJudgeSummary,
   buildMarkdownReport,
@@ -18,11 +25,14 @@ import {
 import {
   buildLabSearchParams,
   buildPersistedLabState,
+  clearPersistedLabState,
   parseLabSearchParams,
   parsePersistedLabState,
   PERSISTED_LAB_STATE_KEY,
+  shouldRestorePersistedRun,
 } from "@/lib/persistence/lab-state";
 import {
+  getDispatchedPersonas,
   isTesterCount,
   TESTER_COUNT_OPTIONS,
   type TesterCount,
@@ -38,6 +48,13 @@ import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 import { getRunGuidance } from "@/lib/ui/run-guidance";
 import { buildPanelReviewItems } from "@/lib/ui/panel-review";
+import { getLiveViewportPresentation } from "@/lib/ui/live-viewport";
+import { canDispatchSuggestedPersonas } from "@/lib/ui/persona-approval";
+import {
+  getPersonaViewportFrames,
+  mergeAgentRuntimeEvents,
+  type AgentRuntimeEvent,
+} from "@/lib/runtime/agent-events";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -84,8 +101,6 @@ type LocalizeHotspotsPayload = {
   };
   error?: { message?: string };
 };
-type AgentRuntimeEvent={id:string;sessionId:string;personaId:string;cursor:number;step:number;createdAt:string;type:"narration"|"research"|"frustration";text?:string;category?:"navigation"|"clarity"|"feedback"|"recovery"|"trust"|"accessibility"|"technical";severity?:1|2|3|4|5;observation?:string;visibleEvidence?:string;currentUrl?:string;recommendation?:string};
-
 const TERMINAL_STATUSES = new Set<NormalizedSession["status"]>([
   "completed",
   "timed_out",
@@ -127,6 +142,9 @@ const DEMO_PRESETS = [
 const DEFAULT_OBJECTIVE =
   "Find the primary user workflow and stop before an irreversible action.";
 const LAUNCHING_SESSION_PREFIX = "launching-";
+const LIVE_EVENT_POLL_INTERVAL_MS = 1_800;
+const SILENT_AUDIO_DATA_URL =
+  "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAAAAgICA";
 
 export default function Home() {
   const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createInitialRun());
@@ -135,10 +153,15 @@ export default function Home() {
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [testerCount, setTesterCount] = useState<TesterCount>(4);
   const [authorized, setAuthorized] = useState(true);
+  const [personasAccepted, setPersonasAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
+  const [liveVoiceEnabled, setLiveVoiceEnabled] = useState(false);
+  const [liveVoiceLine, setLiveVoiceLine] = useState(
+    "Enable live voice to hear new agent thoughts.",
+  );
   const [exportLine, setExportLine] = useState("Report package ready.");
   const [localizedHotspots, setLocalizedHotspots] = useState<VisualHotspot[] | null>(null);
   const [heatmapLine, setHeatmapLine] = useState("Heatmap uses deterministic placement until findings are localized.");
@@ -148,12 +171,19 @@ export default function Home() {
   const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
   const [fixRequestIds, setFixRequestIds] = useState<Set<string>>(() => new Set());
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
+  const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
+  const [replayPlaying, setReplayPlaying] = useState(false);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
   const pendingResultIds = useRef(new Set<string>());
   const lastReportKey = useRef<string | null>(null);
   const liveEventCursors = useRef(new Map<string, number>());
+  const liveVoiceEnabledRef = useRef(false);
+  const liveVoiceQueueRef = useRef<LiveVoiceQueueItem[]>([]);
+  const liveVoiceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const liveVoicePlayingRef = useRef(false);
+  const spokenLiveEventIds = useRef(new Set<string>());
   const sessionsRef = useRef(snapshot.sessions);
   sessionsRef.current = snapshot.sessions;
   const liveMode = snapshot.phase === "running";
@@ -166,6 +196,13 @@ export default function Home() {
     snapshot.phase === "revealing" &&
     snapshot.sessions.length === 0 &&
     Boolean(snapshot.analysis);
+  const canDispatch = canDispatchSuggestedPersonas({
+    hasAnalysis: Boolean(snapshot.analysis),
+    personasAccepted,
+    authorized,
+    loading,
+    dispatching,
+  });
   const activeSessions = useMemo(
     () =>
       snapshot.sessions.filter(
@@ -173,6 +210,7 @@ export default function Home() {
       ),
     [snapshot.sessions],
   );
+  const runComplete = snapshot.sessions.length > 0 && activeSessions.length === 0;
   const sessionKey = snapshot.sessions
     .map((session) => `${session.sessionId}:${session.personaId}`)
     .join("|");
@@ -196,6 +234,36 @@ export default function Home() {
     [snapshot.analysis, snapshot.sessions],
   );
   const visualHotspots = localizedHotspots ?? fallbackHotspots;
+  const liveHotspots = useMemo(
+    () =>
+      buildLiveVisualHotspots(
+        liveEvents.flatMap((event) =>
+          event.type === "frustration" &&
+          event.category &&
+          event.severity &&
+          event.observation &&
+          event.visibleEvidence &&
+          event.recommendation
+            ? [{
+                id: event.id,
+                personaId: event.personaId,
+                step: event.step,
+                category: event.category,
+                severity: event.severity,
+                observation: event.observation,
+                visibleEvidence: event.visibleEvidence,
+                recommendation: event.recommendation,
+              }]
+            : [],
+        ),
+        snapshot.analysis,
+      ),
+    [liveEvents, snapshot.analysis],
+  );
+  const displayedHotspots = useMemo(() => {
+    const liveIds = new Set(liveHotspots.map((hotspot) => hotspot.id));
+    return [...liveHotspots, ...visualHotspots.filter((hotspot) => !liveIds.has(hotspot.id))];
+  }, [liveHotspots, visualHotspots]);
   const hotspotCounts = useMemo(
     () => summarizeHotspots(visualHotspots),
     [visualHotspots],
@@ -219,6 +287,10 @@ export default function Home() {
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
   );
+  const dispatchedPersonas = useMemo(
+    () => getDispatchedPersonas(snapshot.analysis, snapshot.sessions),
+    [snapshot.analysis, snapshot.sessions],
+  );
   const selectedPersona =
     snapshot.analysis?.personas.find((persona) => persona.id === snapshot.selectedPersonaId) ??
     snapshot.analysis?.personas[0];
@@ -226,8 +298,37 @@ export default function Home() {
     snapshot.sessions.find((session) => session.personaId === selectedPersona?.id) ??
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
     snapshot.sessions[0];
-  const liveNarration = [...liveEvents].reverse().find((event) => event.type === "narration" && event.personaId === selectedPersona?.id);
-  const liveFrustration = [...liveEvents].reverse().find((event) => event.type === "frustration" && event.personaId === selectedPersona?.id);
+  const viewportFrames = useMemo(
+    () => getPersonaViewportFrames(liveEvents, selectedPersona?.id),
+    [liveEvents, selectedPersona?.id],
+  );
+  const lastViewportFrameIndex = Math.max(0, viewportFrames.length - 1);
+  const activeViewportFrameIndex =
+    replayFrameIndex === null
+      ? lastViewportFrameIndex
+      : Math.min(replayFrameIndex, lastViewportFrameIndex);
+  const liveViewport = viewportFrames[activeViewportFrameIndex];
+  const eventCursorLimit =
+    replayFrameIndex === null ? Number.POSITIVE_INFINITY : liveViewport?.cursor ?? 0;
+  const liveNarration = [...liveEvents].reverse().find(
+    (event) =>
+      event.type === "narration" &&
+      event.personaId === selectedPersona?.id &&
+      event.cursor <= eventCursorLimit,
+  );
+  const liveFrustration = [...liveEvents].reverse().find(
+    (event) =>
+      event.type === "frustration" &&
+      event.personaId === selectedPersona?.id &&
+      event.cursor <= eventCursorLimit,
+  );
+  const selectedHotspots = displayedHotspots.filter(
+    (hotspot) => hotspot.personaId === selectedPersona?.id,
+  );
+  const liveViewportPresentation = getLiveViewportPresentation({
+    hasLiveViewport: Boolean(liveViewport),
+    hotspotCount: selectedHotspots.length,
+  });
   const hasLiveNarration = Boolean(liveNarration?.text);
   const selectedNarration =
     liveNarration?.text ??
@@ -236,6 +337,100 @@ export default function Home() {
     selectedPersona?.introLine ??
     "No persona finding is ready yet.";
   const selectedFriction = liveFrustration ? {step:liveFrustration.step,category:liveFrustration.category??"clarity",severity:liveFrustration.severity??3,observation:liveFrustration.observation??"Usability barrier",visibleEvidence:liveFrustration.visibleEvidence??"Live agent evidence",recommendation:liveFrustration.recommendation??"Remove this barrier",narratedObservation:liveFrustration.observation??"This is frustrating",recovered:false} : selectedSession?.finding?.frictionEvents[0] ?? null;
+
+  const stopLiveVoicePlayback = useCallback((message?: string) => {
+    liveVoiceQueueRef.current = [];
+    liveVoicePlayingRef.current = false;
+    const audio = liveVoiceAudioRef.current;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    if (message) setLiveVoiceLine(message);
+  }, []);
+
+  const playNextLiveVoiceItem = useCallback(function playNextLiveVoiceItem() {
+    if (!liveVoiceEnabledRef.current || liveVoicePlayingRef.current) return;
+    const next = liveVoiceQueueRef.current.shift();
+    if (!next) {
+      setLiveVoiceLine(
+        `Listening for ${selectedPersona?.displayName ?? "the selected persona"}...`,
+      );
+      return;
+    }
+
+    const audio = liveVoiceAudioRef.current ?? new Audio();
+    liveVoiceAudioRef.current = audio;
+    liveVoicePlayingRef.current = true;
+    audio.volume = 1;
+    audio.src = next.audioSrc;
+    setLiveVoiceLine(`Speaking: “${next.transcript}”`);
+
+    const finish = () => {
+      liveVoicePlayingRef.current = false;
+      audio.onended = null;
+      audio.onerror = null;
+      playNextLiveVoiceItem();
+    };
+    audio.onended = finish;
+    audio.onerror = () => {
+      setLiveVoiceLine("Could not play that reaction. Listening for the next one...");
+      finish();
+    };
+    void audio.play().catch(() => {
+      liveVoiceEnabledRef.current = false;
+      setLiveVoiceEnabled(false);
+      stopLiveVoicePlayback("Playback was blocked. Click Enable live voice again.");
+    });
+  }, [selectedPersona?.displayName, stopLiveVoicePlayback]);
+
+  const queueLiveVoiceItem = useCallback((item: LiveVoiceQueueItem) => {
+    liveVoiceQueueRef.current = enqueueLiveVoiceItem(
+      liveVoiceQueueRef.current,
+      item,
+      2,
+    );
+    setLiveVoiceLine(
+      liveVoicePlayingRef.current
+        ? `${liveVoiceQueueRef.current.length} reaction${liveVoiceQueueRef.current.length === 1 ? "" : "s"} queued.`
+        : "Starting live reaction...",
+    );
+    playNextLiveVoiceItem();
+  }, [playNextLiveVoiceItem]);
+
+  const handleLiveVoiceToggle = useCallback(async () => {
+    if (liveVoiceEnabledRef.current) {
+      liveVoiceEnabledRef.current = false;
+      setLiveVoiceEnabled(false);
+      stopLiveVoicePlayback("Live voice is off.");
+      return;
+    }
+
+    const audio = liveVoiceAudioRef.current ?? new Audio();
+    liveVoiceAudioRef.current = audio;
+    audio.src = SILENT_AUDIO_DATA_URL;
+    audio.volume = 0;
+
+    try {
+      await audio.play();
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = 1;
+      audio.removeAttribute("src");
+      liveVoiceEnabledRef.current = true;
+      setLiveVoiceEnabled(true);
+      setLiveVoiceLine(
+        `Listening for ${selectedPersona?.displayName ?? "the selected persona"}'s next thought...`,
+      );
+    } catch {
+      liveVoiceEnabledRef.current = false;
+      setLiveVoiceEnabled(false);
+      setLiveVoiceLine("Your browser blocked audio. Allow sound, then try again.");
+    }
+  }, [selectedPersona?.displayName, stopLiveVoicePlayback]);
   const completedWithFindings = snapshot.sessions.filter(
     (session) => session.finding,
   ).length;
@@ -256,23 +451,47 @@ export default function Home() {
   );
 
   useEffect(() => {
+    setReplayFrameIndex(null);
+    setReplayPlaying(false);
+  }, [selectedPersona?.id]);
+
+  useEffect(() => {
+    if (!replayPlaying || viewportFrames.length < 2) return;
+
+    const timer = window.setInterval(() => {
+      setReplayFrameIndex((current) => {
+        const next = (current ?? 0) + 1;
+        if (next >= viewportFrames.length) {
+          setReplayPlaying(false);
+          return viewportFrames.length - 1;
+        }
+        return next;
+      });
+    }, 1200);
+
+    return () => window.clearInterval(timer);
+  }, [replayPlaying, viewportFrames.length]);
+
+  useEffect(() => {
     const queryState = parseLabSearchParams(window.location.search);
     const hasQueryState = Object.keys(queryState).length > 0;
     const saved = parsePersistedLabState(
       window.localStorage.getItem(PERSISTED_LAB_STATE_KEY),
     );
 
-    if (saved && !hasQueryState) {
+    if (saved && shouldRestorePersistedRun(saved, queryState)) {
       setSnapshot(saved.snapshot);
       setTargetUrl(saved.targetUrl);
       setObjective(saved.objective);
       setSelectedPresetId(saved.selectedPresetId);
       setTesterCount(isTesterCount(saved.testerCount) ? saved.testerCount : 4);
       setAuthorized(saved.authorized);
+      setPersonasAccepted(saved.personasAccepted);
       setStatusLine(saved.statusLine);
       setPersistenceLine(`Restored saved run from ${new Date(saved.savedAt).toLocaleTimeString()}.`);
       setHasRestoredSavedRun(true);
     } else if (hasQueryState) {
+      setPersonasAccepted(false);
       if (queryState.targetUrl) setTargetUrl(queryState.targetUrl);
       if (queryState.objective) setObjective(queryState.objective);
       if (queryState.testerCount) setTesterCount(queryState.testerCount);
@@ -314,6 +533,7 @@ export default function Home() {
         selectedPresetId,
         testerCount,
         authorized,
+        personasAccepted,
         statusLine,
       });
       window.localStorage.setItem(
@@ -330,12 +550,36 @@ export default function Home() {
     authorized,
     hasRestoredSavedRun,
     objective,
+    personasAccepted,
     persistenceHydrated,
     selectedPresetId,
     snapshot,
     statusLine,
     testerCount,
     targetUrl,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      liveVoiceEnabledRef.current = false;
+      liveVoiceQueueRef.current = [];
+      const audio = liveVoiceAudioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.removeAttribute("src");
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!liveVoiceEnabledRef.current) return;
+    stopLiveVoicePlayback(
+      `Listening for ${selectedPersona?.displayName ?? "the selected persona"}'s next thought...`,
+    );
+  }, [
+    selectedPersona?.displayName,
+    selectedPersona?.id,
+    stopLiveVoicePlayback,
   ]);
 
   useEffect(() => {
@@ -429,10 +673,7 @@ export default function Home() {
 
       const incoming = batches.flat();
       if (incoming.length === 0) return;
-      setLiveEvents((current) => {
-        const known = new Set(current.map((event) => event.id));
-        return [...current, ...incoming.filter((event) => !known.has(event.id))];
-      });
+      setLiveEvents((current) => mergeAgentRuntimeEvents(current, incoming));
 
       for (const event of incoming) {
         const persona = snapshot.analysis?.personas.find(
@@ -443,25 +684,42 @@ export default function Home() {
         );
         if (!persona || !session) continue;
 
-        if (
-          event.type === "narration" &&
-          event.personaId === selectedPersona?.id &&
-          event.text
-        ) {
-          const response = await fetch("/api/voice-reaction", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              personaId: persona.id,
-              voiceSlot: persona.voiceSlot,
-              text: event.text,
-            }),
-          });
-          const payload = (await response.json()) as VoiceReactionPayload;
-          const audio = payload.data?.audioBase64
-            ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
-            : payload.data?.audioUrl;
-          if (audio) void new Audio(audio).play().catch(() => undefined);
+        if (isLiveNarrationEligible({
+          enabled: liveVoiceEnabledRef.current,
+          eventId: event.id,
+          eventType: event.type,
+          eventPersonaId: event.personaId,
+          selectedPersonaId: selectedPersona?.id,
+          text: event.text,
+          spokenEventIds: spokenLiveEventIds.current,
+        })) {
+          spokenLiveEventIds.current.add(event.id);
+          try {
+            const response = await fetch("/api/voice-reaction", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                personaId: persona.id,
+                voiceSlot: persona.voiceSlot,
+                text: event.text,
+              }),
+            });
+            const payload = (await response.json()) as VoiceReactionPayload;
+            const audioSrc = payload.data?.audioBase64
+              ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
+              : payload.data?.audioUrl;
+            if (response.ok && audioSrc && payload.data?.transcript) {
+              queueLiveVoiceItem({
+                eventId: event.id,
+                audioSrc,
+                transcript: payload.data.transcript,
+              });
+            } else {
+              setLiveVoiceLine("Gradium did not return audio. Listening for the next thought...");
+            }
+          } catch {
+            setLiveVoiceLine("Live voice request failed. Listening for the next thought...");
+          }
         }
 
         if (event.type === "frustration") {
@@ -494,7 +752,7 @@ export default function Home() {
       }
     }
 
-    const timer = window.setInterval(poll, 6000);
+    const timer = window.setInterval(poll, LIVE_EVENT_POLL_INTERVAL_MS);
     void poll();
     return () => {
       cancelled = true;
@@ -502,6 +760,7 @@ export default function Home() {
     };
   }, [
     objective,
+    queueLiveVoiceItem,
     selectedPersona?.id,
     snapshot.analysis?.personas,
     snapshot.id,
@@ -713,6 +972,7 @@ export default function Home() {
         createdAt: now,
         updatedAt: now,
       }));
+      setPersonasAccepted(false);
       setLocalizedHotspots(null);
       setStatusLine(
         `Generated ${payload.data.analysis.personas.length} personas with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
@@ -725,7 +985,7 @@ export default function Home() {
   }
 
   async function handleLaunch() {
-    if (!snapshot.analysis) return;
+    if (!snapshot.analysis || !canDispatch) return;
     setDispatching(true);
     const beforeLaunch = snapshot;
     const customPersona = snapshot.analysis?.personas.find((persona) =>
@@ -757,11 +1017,18 @@ export default function Home() {
       }),
     );
     liveEventCursors.current.clear();
+    spokenLiveEventIds.current.clear();
+    stopLiveVoicePlayback(
+      liveVoiceEnabledRef.current
+        ? `Listening for ${personasToLaunch[0]?.displayName ?? "the selected persona"}'s first thought...`
+        : "Enable live voice to hear new agent thoughts.",
+    );
     setLiveEvents([]);
     setSnapshot((current) => ({
       ...current,
       phase: "running",
       sessions: launchingSessions,
+      selectedPersonaId: personasToLaunch[0]?.id ?? null,
       report: null,
       error: null,
       updatedAt: startedAt,
@@ -819,6 +1086,7 @@ export default function Home() {
         objective: objective.trim() || DEFAULT_OBJECTIVE,
         globalSafetyBoundaries: snapshot.analysis.globalSafetyBoundaries,
       });
+      setPersonasAccepted(false);
 
       setSnapshot((current) => {
         if (!current.analysis) return current;
@@ -843,6 +1111,46 @@ export default function Home() {
         error instanceof Error ? error.message : "Could not create the custom persona.",
       );
     }
+  }
+
+  function handleAcceptPersonas() {
+    if (!snapshot.analysis) return;
+    setPersonasAccepted(true);
+    setStatusLine(
+      `${snapshot.analysis.personas.length} persona suggestions accepted and saved in this browser.`,
+    );
+    setPersistenceLine("Accepted persona roster saved for this lab run.");
+  }
+
+  function handleNewTest() {
+    clearPersistedLabState(window.localStorage);
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+    pendingResultIds.current.clear();
+    lastReportKey.current = null;
+    liveEventCursors.current.clear();
+    spokenLiveEventIds.current.clear();
+    liveVoiceEnabledRef.current = false;
+    setLiveVoiceEnabled(false);
+    stopLiveVoicePlayback("Enable live voice to hear new agent thoughts.");
+    setSnapshot(createInitialRun());
+    setTargetUrl("");
+    setObjective(DEFAULT_OBJECTIVE);
+    setSelectedPresetId(null);
+    setTesterCount(4);
+    setAuthorized(false);
+    setPersonasAccepted(false);
+    setLoading(false);
+    setDispatching(false);
+    setLiveEvents([]);
+    setReplayFrameIndex(null);
+    setReplayPlaying(false);
+    setLocalizedHotspots(null);
+    setHeatmapLine("Heatmap will appear after friction evidence is captured.");
+    setDrawerOpen(false);
+    setFixRequestIds(new Set());
+    setHasRestoredSavedRun(false);
+    setStatusLine("Enter a website and use case to start a new usability test.");
+    setPersistenceLine("Previous run cleared. New test is not saved yet.");
   }
 
   async function handleVoice() {
@@ -1286,13 +1594,31 @@ export default function Home() {
                 </div>
               </section>
             ) : null}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-ink/12 bg-white p-4">
+              <div>
+                <p className="font-black">
+                  {personasAccepted ? "Persona roster accepted" : "Approve these suggestions"}
+                </p>
+                <p className="mt-1 text-sm text-ink/60">
+                  Acceptance saves the generated roster with this lab run.
+                </p>
+              </div>
+              <button
+                className="rounded-md border border-mint bg-mint px-4 py-2 font-black text-ink disabled:opacity-60"
+                disabled={personasAccepted || !snapshot.analysis}
+                onClick={handleAcceptPersonas}
+                type="button"
+              >
+                {personasAccepted ? "Accepted and saved" : "Accept and save"}
+              </button>
+            </div>
             <button
               className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-md border px-5 font-bold transition disabled:cursor-not-allowed disabled:opacity-55 ${
                 panelFeedback.tone === "ready"
                   ? "border-mint bg-mint text-ink shadow-[0_12px_28px_rgba(98,196,155,0.22)] hover:-translate-y-0.5"
                   : "border-ink/18 bg-white text-ink"
               }`}
-              disabled={loading || dispatching || !authorized || !snapshot.analysis}
+              disabled={!canDispatch}
               onClick={handleLaunch}
               type="button"
             >
@@ -1744,8 +2070,6 @@ export default function Home() {
     : null;
   const fixReady = selectedFixRequestId ? fixRequestIds.has(selectedFixRequestId) : false;
   const replayMode = selectedSession?.sessionId.startsWith("demo-") ?? false;
-  const runComplete = isLiveView && activeSessions.length === 0;
-
   return (
     <div className="simple-app">
       <header className="simple-header">
@@ -1760,10 +2084,7 @@ export default function Home() {
         </div>
         {isLiveView ? (
           <button
-            onClick={() => {
-              setSnapshot(createInitialRun());
-              setFixRequestIds(new Set());
-            }}
+            onClick={handleNewTest}
             type="button"
           >
             New test
@@ -1875,6 +2196,24 @@ export default function Home() {
                 onCreate={handleCreatePersona}
               />
 
+              <div className={`persona-approval ${personasAccepted ? "is-accepted" : ""}`}>
+                <div>
+                  <b>{personasAccepted ? "Persona roster accepted" : "Do these personas look right?"}</b>
+                  <span>
+                    {personasAccepted
+                      ? "Saved with this lab run. You can safely reload before dispatching."
+                      : "Review the suggested users, then accept and save the roster before dispatch."}
+                  </span>
+                </div>
+                <button
+                  disabled={personasAccepted || !snapshot.analysis}
+                  onClick={handleAcceptPersonas}
+                  type="button"
+                >
+                  {personasAccepted ? <><Check size={14} /> Accepted and saved</> : "Accept and save personas"}
+                </button>
+              </div>
+
               <div className="dispatch-row">
                 <div>
                   <span>Testers</span>
@@ -1894,15 +2233,15 @@ export default function Home() {
                 </div>
                 <button
                   className="dispatch-button"
-                  disabled={loading || dispatching || !authorized}
+                  disabled={!canDispatch}
                   onClick={handleLaunch}
                   type="button"
                 >
                   <Play size={17} />
-                  {dispatching ? "Dispatching…" : `Dispatch ${selectedTesterCount} testers`}
+                  {dispatching ? "Dispatching…" : !personasAccepted ? "Accept personas first" : `Dispatch ${selectedTesterCount} testers`}
                 </button>
               </div>
-              <button className="quiet-back" onClick={() => setSnapshot(createInitialRun())} type="button">← Change website</button>
+              <button className="quiet-back" onClick={handleNewTest} type="button">← Change website</button>
             </section>
           ) : null}
 
@@ -1913,14 +2252,25 @@ export default function Home() {
                 <p><Activity size={14} /> {dispatching ? `${launchingSessionsLabel(snapshot.sessions.length)} connecting` : activeSessions.length ? `${activeSessions.length} agents active` : "Run complete"}</p>
                 <h1 id="live-room-title">Watching {selectedPersona?.displayName}</h1>
               </div>
-              <div className="provider-badges">
-                <span><i className={runComplete ? "done" : "connected"} />H Company · {dispatching ? "connecting" : replayMode ? "replay" : runComplete ? "complete" : "status connected"}</span>
-                <span>Gradium · {hasLiveNarration ? "live event voice" : "persona/finding voice"}</span>
+              <div className="live-provider-controls">
+                <div className="provider-badges">
+                  <span><i className={runComplete ? "done" : "connected"} />H Company · {dispatching ? "connecting" : replayMode ? "replay" : runComplete ? "complete" : "status connected"}</span>
+                  <span>Gradium · {hasLiveNarration ? "live event voice" : "persona/finding voice"}</span>
+                  <button
+                    aria-pressed={liveVoiceEnabled}
+                    className="live-voice-toggle"
+                    onClick={handleLiveVoiceToggle}
+                    type="button"
+                  >
+                    <Volume2 size={12} /> {liveVoiceEnabled ? "Live voice on" : "Enable live voice"}
+                  </button>
+                </div>
+                <small aria-live="polite" className="live-voice-line">{liveVoiceLine}</small>
               </div>
             </div>
 
             <div className="live-persona-dock" role="group" aria-label="Switch observed tester">
-              {snapshot.analysis.personas.map((persona) => {
+              {dispatchedPersonas.map((persona) => {
                 const session = sessionsByPersona.get(persona.id);
                 return (
                   <button
@@ -1943,28 +2293,55 @@ export default function Home() {
               <div className="agent-stage">
                 <div className="browser-bar">
                   <i /><i /><i />
-                  <span>{snapshot.url}</span>
+                  <span>{liveViewport?.currentUrl ?? snapshot.url}</span>
                   <b>{selectedSession?.status ?? "queued"}</b>
                 </div>
                 <div className="browser-screen">
-                  <span className="frame-mode">{replayMode ? "Evidence replay" : "Live session"}</span>
-                  <div className="screen-nav"><span /><span /><span /></div>
-                  <div className="screen-copy">
-                    <i />
-                    <i />
-                    <i />
-                    <button type="button">Primary action</button>
-                  </div>
-                  <HotspotLayer
-                    hotspots={visualHotspots.filter((hotspot) => hotspot.personaId === selectedPersona?.id)}
-                    onSelect={handleHotspotSelect}
-                  />
-                  <div className="agent-cursor">↖</div>
+                  <span className="frame-mode">
+                    {liveViewport
+                      ? runComplete
+                        ? `Evidence replay · frame ${activeViewportFrameIndex + 1} of ${viewportFrames.length}`
+                        : `Exact H viewport · ${viewportFrames.length} frame${viewportFrames.length === 1 ? "" : "s"}`
+                      : replayMode
+                        ? "Evidence replay"
+                        : runComplete
+                          ? "No H viewport frames received"
+                          : "Waiting for H viewport"}
+                  </span>
+                  {liveViewport?.imageUrl ? (
+                    <Image
+                      alt={`Live H Company browser for ${selectedPersona?.displayName ?? "agent"}`}
+                      className="agent-live-viewport"
+                      height={900}
+                      src={liveViewport.imageUrl}
+                      unoptimized
+                      width={1280}
+                    />
+                  ) : liveViewportPresentation.showSyntheticScaffold ? (
+                    <>
+                      <div className="screen-nav"><span /><span /><span /></div>
+                      <div className="screen-copy">
+                        <i />
+                        <i />
+                        <i />
+                        <button type="button">Primary action</button>
+                      </div>
+                    </>
+                  ) : null}
+                  {liveViewportPresentation.showHotspotOverlay ? (
+                    <HotspotLayer
+                      hotspots={selectedHotspots}
+                      onSelect={handleHotspotSelect}
+                    />
+                  ) : null}
+                  {liveViewportPresentation.showSyntheticScaffold ? (
+                    <div className="agent-cursor">↖</div>
+                  ) : null}
                   <div className="thought-annotation">
                     <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
                     <blockquote>“{selectedNarration}”</blockquote>
-                    <button disabled={voiceLoading || !selectedPersona} onClick={handleVoice} type="button">
-                      {voiceLoading ? "Preparing…" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
+                    <button disabled={voiceLoading || !selectedPersona || liveVoiceEnabled} onClick={handleVoice} type="button">
+                      {liveVoiceEnabled ? "Live voice on" : voiceLoading ? "Preparing…" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
                     </button>
                   </div>
                   {selectedFriction ? (
@@ -1981,14 +2358,68 @@ export default function Home() {
                     </div>
                   ) : null}
                 </div>
+                {viewportFrames.length > 0 ? (
+                  <div className="replay-controls" aria-label="Computer-use run replay controls">
+                    <button
+                      aria-label="Previous captured frame"
+                      disabled={activeViewportFrameIndex === 0}
+                      onClick={() => {
+                        setReplayPlaying(false);
+                        setReplayFrameIndex(Math.max(0, activeViewportFrameIndex - 1));
+                      }}
+                      type="button"
+                    >
+                      <SkipBack size={14} />
+                    </button>
+                    <button
+                      aria-label={replayPlaying ? "Pause run replay" : "Play run replay"}
+                      disabled={viewportFrames.length < 2}
+                      onClick={() => {
+                        if (replayPlaying) {
+                          setReplayPlaying(false);
+                          return;
+                        }
+                        if (activeViewportFrameIndex >= viewportFrames.length - 1) {
+                          setReplayFrameIndex(0);
+                        }
+                        setReplayPlaying(true);
+                      }}
+                      type="button"
+                    >
+                      {replayPlaying ? <Pause size={14} /> : <Play size={14} />}
+                      {replayPlaying ? "Pause" : runComplete ? "Replay run" : "Review frames"}
+                    </button>
+                    <div className="replay-progress" aria-hidden="true">
+                      <i style={{ width: `${((activeViewportFrameIndex + 1) / viewportFrames.length) * 100}%` }} />
+                    </div>
+                    <span>{activeViewportFrameIndex + 1} / {viewportFrames.length}</span>
+                    <button
+                      aria-label="Next captured frame"
+                      disabled={activeViewportFrameIndex >= viewportFrames.length - 1}
+                      onClick={() => {
+                        setReplayPlaying(false);
+                        setReplayFrameIndex(Math.min(viewportFrames.length - 1, activeViewportFrameIndex + 1));
+                      }}
+                      type="button"
+                    >
+                      <SkipForward size={14} />
+                    </button>
+                  </div>
+                ) : null}
                 <div className="agent-action-bar">
                   <span className="agent-avatar">{selectedPersona?.displayName.charAt(0) ?? "?"}</span>
                   <div>
                     <small>{runComplete ? "Evidence captured" : "H API status"} · {selectedSession?.stepCount ?? 0} steps</small>
                     <b>{selectedSession?.latestActionLabel ?? "Waiting to start"}</b>
-                    {!replayMode && !hasLiveNarration ? (
+                    {!replayMode ? (
                       <span className="live-feed-note">
-                        H has not published observation text through the REST events feed. Agent View is the exact live browser stream.
+                        {liveViewport
+                          ? runComplete
+                            ? "Captured computer-use evidence is available above. Replay the run or select a heatmap marker."
+                            : "Rendering exact H browser frames as observation events arrive."
+                          : runComplete
+                            ? "H did not include browser frames in the event feed. Open Agent View to inspect the provider recording."
+                            : "Waiting for the first H browser frame. Agent View remains available while the agent is queued."}
                       </span>
                     ) : null}
                   </div>
