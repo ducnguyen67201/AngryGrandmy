@@ -1,9 +1,18 @@
+"use client";
+
+import { useState, type FormEvent } from "react";
 import { ExternalLink, Play, ShieldCheck, Sparkles } from "lucide-react";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
-import type { VisualAgentState } from "@/lib/schemas/run";
+import type { RunSnapshot, VisualAgentState } from "@/lib/schemas/run";
 
 export default function Home() {
-  const snapshot = createDemoRun();
+  const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createDemoRun());
+  const [targetUrl, setTargetUrl] = useState("https://demo-health.example");
+  const [authorized, setAuthorized] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [statusLine, setStatusLine] = useState(
+    "Mock-first build: real H Company routes can swap in behind this contract.",
+  );
   const report = snapshot.report;
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
@@ -11,6 +20,42 @@ export default function Home() {
   const selectedSession =
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
     snapshot.sessions[0];
+
+  async function handleLaunch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    setStatusLine("Dispatching through the same API contract the live demo will use.");
+
+    try {
+      const response = await fetch("/api/analyze-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: targetUrl,
+          objective: "Find the primary user workflow and stop before an irreversible action.",
+          authorizationConfirmed: authorized,
+        }),
+      });
+      const payload = (await response.json()) as {
+        data?: RunSnapshot;
+        meta?: { mode?: string };
+        error?: { message?: string };
+      };
+
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error?.message ?? "Could not start analysis.");
+      }
+
+      setSnapshot(payload.data);
+      setStatusLine(
+        `Loaded ${payload.data.analysis?.productName ?? "target product"} through /api/analyze-product (${payload.meta?.mode ?? "demo"}).`,
+      );
+    } catch (error) {
+      setStatusLine(error instanceof Error ? error.message : "Could not start analysis.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <main className="min-h-screen px-5 py-6 text-ink md:px-8">
@@ -39,7 +84,10 @@ export default function Home() {
             </p>
           </div>
 
-          <form className="grid gap-3 rounded-lg border border-ink/12 bg-white/72 p-4 shadow-sm backdrop-blur">
+          <form
+            className="grid gap-3 rounded-lg border border-ink/12 bg-white/72 p-4 shadow-sm backdrop-blur"
+            onSubmit={handleLaunch}
+          >
             <label className="text-sm font-bold" htmlFor="target-url">
               Authorized site URL
             </label>
@@ -47,24 +95,31 @@ export default function Home() {
               <input
                 id="target-url"
                 className="min-h-12 rounded-md border border-ink/18 bg-white px-4 text-base"
-                defaultValue="https://demo-health.example"
+                onChange={(event) => setTargetUrl(event.target.value)}
+                value={targetUrl}
                 type="url"
               />
               <button
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-ink px-5 font-bold text-paper"
-                type="button"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-ink px-5 font-bold text-paper disabled:cursor-not-allowed disabled:opacity-55"
+                disabled={loading || !authorized}
+                type="submit"
               >
                 <Play size={18} />
-                Release the Panel
+                {loading ? "Dispatching..." : "Release the Panel"}
               </button>
             </div>
             <label className="inline-flex items-start gap-3 text-sm leading-6 text-ink/70">
-              <input className="mt-1" defaultChecked type="checkbox" />
+              <input
+                checked={authorized}
+                className="mt-1"
+                onChange={(event) => setAuthorized(event.target.checked)}
+                type="checkbox"
+              />
               I own this site or have explicit permission to run synthetic usability tests against
               it.
             </label>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">
-              Mock-first build: real H Company routes can swap in behind this contract.
+              {statusLine}
             </p>
           </form>
         </div>
