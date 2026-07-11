@@ -79,6 +79,19 @@ describe("lab state persistence", () => {
     });
   });
 
+  it("parses an explicit real run share URL", () => {
+    expect(
+      parseLabSearchParams(
+        "?url=https%3A%2F%2Fgettrustloop.app%2F&objective=Find+the+primary+workflow&testers=3&run=1",
+      ),
+    ).toEqual({
+      targetUrl: "https://gettrustloop.app/",
+      objective: "Find the primary workflow",
+      testerCount: 3,
+      realRun: true,
+    });
+  });
+
   it("ignores unsafe or out-of-range URL configuration", () => {
     expect(
       parseLabSearchParams(
@@ -130,6 +143,27 @@ describe("lab state persistence", () => {
         objective: persisted.objective,
         testerCount: 2,
         demoReplay: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not restore autosave over an explicit real run URL", () => {
+    const persisted = buildPersistedLabState({
+      snapshot: { ...createDemoRun(), phase: "running" },
+      targetUrl: "https://gettrustloop.app/",
+      objective: "Find the primary workflow.",
+      selectedPresetId: null,
+      testerCount: 2,
+      authorized: true,
+      statusLine: "Two H sessions running.",
+    });
+
+    expect(
+      shouldRestorePersistedRun(persisted, {
+        targetUrl: persisted.targetUrl,
+        objective: persisted.objective,
+        testerCount: 2,
+        realRun: true,
       }),
     ).toBe(false);
   });
