@@ -21,6 +21,7 @@ import {
 } from "@/lib/hotspots/build-hotspots";
 import { buildLiveVisualHotspots } from "@/lib/hotspots/build-live-hotspots";
 import { buildHeatmapDensityBlobs } from "@/lib/hotspots/build-heatmap-density";
+import { buildReplayAttentionHotspots } from "@/lib/hotspots/build-replay-attention";
 import {
   buildJudgeSummary,
   buildMarkdownReport,
@@ -397,6 +398,17 @@ export default function Home() {
   const selectedHotspots = displayedHotspots.filter(
     (hotspot) => hotspot.personaId === selectedPersona?.id,
   );
+  const replayAttentionHotspots = useMemo(
+    () =>
+      replayFrameIndex === null
+        ? []
+        : buildReplayAttentionHotspots(
+            liveEvents,
+            selectedPersona?.id,
+            eventCursorLimit,
+          ),
+    [eventCursorLimit, liveEvents, replayFrameIndex, selectedPersona?.id],
+  );
   const agentCursorPoint = selectedPersona
     ? getAgentCursorForFrame({
         events: liveEvents,
@@ -687,6 +699,13 @@ export default function Home() {
       processedEventIds: screenNarratedEventIds.current,
     });
     if (!candidate?.imageUrl) return;
+    const existingFrameNarration = eventsAtCurrentFrame.find(
+      (event) =>
+        event.personaId === selectedPersona.id &&
+        event.type === "narration" &&
+        event.cursor === candidate.cursor &&
+        Boolean(event.text?.trim()),
+    );
 
     const now = Date.now();
     if (now - lastScreenNarrationAt.current < 6_000) return;
@@ -710,6 +729,7 @@ export default function Home() {
       .then(async (response) => {
         const payload = (await response.json()) as ScreenNarrationPayload;
         if (!response.ok || !payload.data?.text || cancelled) return null;
+        const narrationText = existingFrameNarration?.text ?? payload.data.text;
         const narrationEvent: AgentRuntimeEvent = {
           id: narrationId,
           sessionId: candidate.sessionId ?? selectedSession?.sessionId ?? candidate.id,
@@ -718,7 +738,7 @@ export default function Home() {
           step: candidate.step ?? candidate.cursor,
           createdAt: new Date().toISOString(),
           type: "narration",
-          text: payload.data.text,
+          text: narrationText,
           emotion: "observing",
           ...(typeof payload.data.x === "number" && typeof payload.data.y === "number"
             ? {
@@ -728,12 +748,14 @@ export default function Home() {
               }
             : {}),
         };
-        const voiceItem = await synthesizeVoiceItem({
-          eventId: narrationId,
-          personaId: selectedPersona.id,
-          voiceSlot: selectedPersona.voiceSlot,
-          text: payload.data.text,
-        });
+        const voiceItem = existingFrameNarration
+          ? null
+          : await synthesizeVoiceItem({
+              eventId: narrationId,
+              personaId: selectedPersona.id,
+              voiceSlot: selectedPersona.voiceSlot,
+              text: narrationText,
+            });
         return { narrationEvent, voiceItem };
       })
       .then((result) => {
@@ -2708,9 +2730,9 @@ export default function Home() {
                           ? "No H viewport frames received"
                           : "Waiting for H viewport"}
                   </span>
-                  {selectedHotspots.length > 0 ? (
+                  {selectedHotspots.length + replayAttentionHotspots.length > 0 ? (
                     <span className="live-heatmap-status">
-                      <Activity size={11} /> {liveMode ? "Live heatmap" : "Evidence heatmap"} · {selectedHotspots.length} signal{selectedHotspots.length === 1 ? "" : "s"}
+                      <Activity size={11} /> {replayFrameIndex !== null ? "Replay attention" : liveMode ? "Live heatmap" : "Evidence heatmap"} · {selectedHotspots.length + replayAttentionHotspots.length} signal{selectedHotspots.length + replayAttentionHotspots.length === 1 ? "" : "s"}
                     </span>
                   ) : null}
                   {liveViewport?.imageUrl ? (
@@ -2733,11 +2755,16 @@ export default function Home() {
                       </div>
                     </>
                   ) : null}
-                  {liveViewportPresentation.showHotspotOverlay ? (
-                    <HotspotLayer
-                      hotspots={selectedHotspots}
-                      onSelect={handleHotspotSelect}
-                    />
+                  {liveViewportPresentation.showHotspotOverlay || replayAttentionHotspots.length > 0 ? (
+                    <div className="agent-viewport-coordinate-space is-heatmap">
+                      {liveViewportPresentation.showHotspotOverlay ? (
+                        <HotspotLayer
+                          hotspots={selectedHotspots}
+                          onSelect={handleHotspotSelect}
+                        />
+                      ) : null}
+                      <HeatmapDensityLayer hotspots={replayAttentionHotspots} />
+                    </div>
                   ) : null}
                   {agentCursorPoint ? (
                     <div className="agent-viewport-coordinate-space">
@@ -2923,26 +2950,9 @@ function HotspotLayer({
 }) {
   if (hotspots.length === 0) return null;
 
-  const densityBlobs = buildHeatmapDensityBlobs(hotspots);
-
   return (
     <>
-      <div aria-hidden="true" className="heatmap-density-layer">
-        {densityBlobs.map((blob) => (
-          <i
-            className="heatmap-density-blob"
-            key={blob.id}
-            style={{
-              "--heatmap-core-opacity": blob.coreOpacity,
-              height: `${blob.radius * 2}%`,
-              left: `${blob.x}%`,
-              opacity: blob.opacity,
-              top: `${blob.y}%`,
-              width: `${blob.radius * 2}%`,
-            } as CSSProperties}
-          />
-        ))}
-      </div>
+      <HeatmapDensityLayer hotspots={hotspots} />
       <div className="absolute inset-0 z-20 pointer-events-none">
         {hotspots.slice(-6).map((hotspot) => (
         <button
@@ -2971,6 +2981,30 @@ function HotspotLayer({
       ))}
       </div>
     </>
+  );
+}
+
+function HeatmapDensityLayer({ hotspots }: { hotspots: VisualHotspot[] }) {
+  const densityBlobs = buildHeatmapDensityBlobs(hotspots);
+  if (densityBlobs.length === 0) return null;
+
+  return (
+    <div aria-hidden="true" className="heatmap-density-layer">
+      {densityBlobs.map((blob) => (
+        <i
+          className="heatmap-density-blob"
+          key={blob.id}
+          style={{
+            "--heatmap-core-opacity": blob.coreOpacity,
+            height: `${blob.radius * 2}%`,
+            left: `${blob.x}%`,
+            opacity: blob.opacity,
+            top: `${blob.y}%`,
+            width: `${blob.radius * 2}%`,
+          } as CSSProperties}
+        />
+      ))}
+    </div>
   );
 }
 

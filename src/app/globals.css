@@ -163,6 +163,7 @@
 .browser-screen { height: 385px; position: relative; overflow: hidden; container-type: size; background: linear-gradient(135deg, #fbfcfc, #eef2f1); }
 .agent-live-viewport { width: 100%; height: 100%; display: block; object-fit: contain; background: #f7f8f8; }
 .agent-viewport-coordinate-space { position: absolute; z-index: 31; top: 50%; left: 50%; width: min(100cqw, 142.222cqh); height: min(100cqh, 70.3125cqw); transform: translate(-50%, -50%); pointer-events: none; }
+.agent-viewport-coordinate-space.is-heatmap { z-index: 18; }
 .screen-nav { height: 52px; padding: 0 26px; display: flex; align-items: center; gap: 20px; border-bottom: 1px solid #e6e9e8; background: white; }
 .screen-nav span { width: 72px; height: 8px; border-radius: 8px; background: #dce1df; }
 .screen-nav span:first-child { width: 38px; margin-right: auto; background: #313b39; }

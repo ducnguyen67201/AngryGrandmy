@@ -59,6 +59,8 @@ export type ScreenNarrationEvent = ReplayNarrationEvent & {
   sessionId?: string;
   step?: number;
   currentUrl?: string;
+  x?: number;
+  y?: number;
 };
 
 export function getScreenNarrationCandidate({
@@ -87,11 +89,17 @@ export function getScreenNarrationCandidate({
       event.personaId === selectedPersonaId &&
       event.type === "narration" &&
       event.cursor === candidate.cursor &&
-      Boolean(event.text?.trim()),
+      Boolean(event.text?.trim()) &&
+      validPercent(event.x) &&
+      validPercent(event.y),
   )) {
     return null;
   }
   return candidate;
+}
+
+function validPercent(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
 }
 
 export function getReplayNarrationsForFrame({
