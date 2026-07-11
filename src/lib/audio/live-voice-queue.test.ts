@@ -7,6 +7,7 @@ import {
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
   shouldSpeakCurrentNarrationOnEnable,
+  shouldPrimeReplayNarration,
   shouldEnableLiveVoiceForDispatch,
   type LiveVoiceQueueItem,
 } from "./live-voice-queue";
@@ -43,6 +44,21 @@ describe("live persona voice queue", () => {
       runComplete: false,
       selectedPersonaId: "arjun",
       narration: "Wait for the next live event.",
+    })).toBe(false);
+  });
+
+  it("primes replay with the visible persona line before frame events arrive", () => {
+    expect(shouldPrimeReplayNarration({
+      enabled: true,
+      frameCount: 46,
+      selectedPersonaId: "arjun",
+      narration: "I want to compare the options carefully.",
+    })).toBe(true);
+    expect(shouldPrimeReplayNarration({
+      enabled: true,
+      frameCount: 0,
+      selectedPersonaId: "arjun",
+      narration: "No replay frames exist.",
     })).toBe(false);
   });
 
