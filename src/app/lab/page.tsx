@@ -27,6 +27,7 @@ import {
   shouldRestorePersistedRun,
 } from "@/lib/persistence/lab-state";
 import {
+  getDispatchedPersonas,
   isTesterCount,
   TESTER_COUNT_OPTIONS,
   type TesterCount,
@@ -268,6 +269,10 @@ export default function Home() {
   );
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
+  );
+  const dispatchedPersonas = useMemo(
+    () => getDispatchedPersonas(snapshot.analysis, snapshot.sessions),
+    [snapshot.analysis, snapshot.sessions],
   );
   const selectedPersona =
     snapshot.analysis?.personas.find((persona) => persona.id === snapshot.selectedPersonaId) ??
@@ -865,6 +870,7 @@ export default function Home() {
       ...current,
       phase: "running",
       sessions: launchingSessions,
+      selectedPersonaId: personasToLaunch[0]?.id ?? null,
       report: null,
       error: null,
       updatedAt: startedAt,
@@ -2091,7 +2097,7 @@ export default function Home() {
             </div>
 
             <div className="live-persona-dock" role="group" aria-label="Switch observed tester">
-              {snapshot.analysis.personas.map((persona) => {
+              {dispatchedPersonas.map((persona) => {
                 const session = sessionsByPersona.get(persona.id);
                 return (
                   <button
