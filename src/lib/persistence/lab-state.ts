@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_TESTER_COUNT } from "@/lib/run/tester-count";
 import { RunSnapshotSchema, type RunSnapshot } from "@/lib/schemas/run";
 
 export const PERSISTED_LAB_STATE_KEY = "grannysmith:last-lab-state";
@@ -10,6 +11,7 @@ const PersistedLabStateSchema = z.object({
   targetUrl: z.string().url(),
   objective: z.string(),
   selectedPresetId: z.string().nullable(),
+  testerCount: z.number().int().min(1).max(4).default(DEFAULT_TESTER_COUNT),
   authorized: z.boolean(),
   statusLine: z.string(),
   savedAt: z.string().datetime(),
@@ -22,6 +24,7 @@ export function buildPersistedLabState({
   targetUrl,
   objective,
   selectedPresetId,
+  testerCount,
   authorized,
   statusLine,
 }: {
@@ -29,6 +32,7 @@ export function buildPersistedLabState({
   targetUrl: string;
   objective: string;
   selectedPresetId: string | null;
+  testerCount: number;
   authorized: boolean;
   statusLine: string;
 }): PersistedLabState {
@@ -38,6 +42,7 @@ export function buildPersistedLabState({
     targetUrl,
     objective,
     selectedPresetId,
+    testerCount,
     authorized,
     statusLine,
     savedAt: new Date().toISOString(),

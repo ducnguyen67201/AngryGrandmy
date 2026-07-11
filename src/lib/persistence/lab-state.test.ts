@@ -18,6 +18,7 @@ describe("lab state persistence", () => {
       targetUrl: "https://gettrustloop.app/",
       objective: "Find the primary user workflow.",
       selectedPresetId: null,
+      testerCount: 2,
       authorized: true,
       statusLine: "Polling H Company sessions.",
     });
@@ -29,6 +30,7 @@ describe("lab state persistence", () => {
     const parsed = parsePersistedLabState(JSON.stringify(persisted));
     expect(parsed?.snapshot.phase).toBe("running");
     expect(parsed?.targetUrl).toBe("https://gettrustloop.app/");
+    expect(parsed?.testerCount).toBe(2);
     expect(parsed?.statusLine).toBe("Polling H Company sessions.");
   });
 

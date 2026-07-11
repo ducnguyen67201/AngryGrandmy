@@ -25,4 +25,18 @@ describe("heatmap display copy", () => {
     expect(display.countLabel).toBe("Waiting for evidence");
     expect(display.hint).toContain("H sessions finish");
   });
+
+  it("frames generated personas as a preview before dispatch", () => {
+    const display = getHeatmapDisplay({
+      hotspotCount: 0,
+      heatmapLine: "Heatmap uses deterministic placement until findings are localized.",
+      liveMode: false,
+      panelReady: true,
+    });
+
+    expect(display.label).toBe("Grandma preview");
+    expect(display.countLabel).toBe("Ready to dispatch");
+    expect(display.hint).toContain("If this looks right");
+    expect(display.sourceLabel).toContain("Preview only");
+  });
 });
