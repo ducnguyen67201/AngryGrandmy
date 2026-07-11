@@ -14,6 +14,11 @@ import {
   buildMarkdownReport,
   buildReportJson,
 } from "@/lib/report/export-report";
+import {
+  buildPersistedLabState,
+  parsePersistedLabState,
+  PERSISTED_LAB_STATE_KEY,
+} from "@/lib/persistence/lab-state";
 import type {
   NormalizedSession,
   RunSnapshot,
@@ -122,6 +127,9 @@ export default function Home() {
   const [localizedHotspots, setLocalizedHotspots] = useState<VisualHotspot[] | null>(null);
   const [heatmapLine, setHeatmapLine] = useState("Heatmap uses deterministic placement until findings are localized.");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [persistenceLine, setPersistenceLine] = useState("Restoring any saved lab run...");
+  const [persistenceHydrated, setPersistenceHydrated] = useState(false);
+  const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
@@ -188,6 +196,60 @@ export default function Home() {
         .join("|"),
     [fallbackHotspots],
   );
+
+  useEffect(() => {
+    const saved = parsePersistedLabState(
+      window.localStorage.getItem(PERSISTED_LAB_STATE_KEY),
+    );
+
+    if (saved) {
+      setSnapshot(saved.snapshot);
+      setTargetUrl(saved.targetUrl);
+      setObjective(saved.objective);
+      setSelectedPresetId(saved.selectedPresetId);
+      setAuthorized(saved.authorized);
+      setStatusLine(saved.statusLine);
+      setPersistenceLine(`Restored saved run from ${new Date(saved.savedAt).toLocaleTimeString()}.`);
+      setHasRestoredSavedRun(true);
+    } else {
+      setPersistenceLine("Autosave ready.");
+    }
+
+    setPersistenceHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!persistenceHydrated) return;
+
+    try {
+      const persisted = buildPersistedLabState({
+        snapshot,
+        targetUrl,
+        objective,
+        selectedPresetId,
+        authorized,
+        statusLine,
+      });
+      window.localStorage.setItem(
+        PERSISTED_LAB_STATE_KEY,
+        JSON.stringify(persisted),
+      );
+      setPersistenceLine(
+        `${hasRestoredSavedRun ? "Restored run" : "Run"} autosaved ${new Date(persisted.savedAt).toLocaleTimeString()}.`,
+      );
+    } catch {
+      setPersistenceLine("Autosave paused until the URL is valid.");
+    }
+  }, [
+    authorized,
+    hasRestoredSavedRun,
+    objective,
+    persistenceHydrated,
+    selectedPresetId,
+    snapshot,
+    statusLine,
+    targetUrl,
+  ]);
 
   useEffect(() => {
     if (!liveMode || activeSessions.length === 0) return;
@@ -797,6 +859,9 @@ export default function Home() {
             </label>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">
               {statusLine}
+            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mint/75">
+              {persistenceLine}
             </p>
           </form>
         </div>
