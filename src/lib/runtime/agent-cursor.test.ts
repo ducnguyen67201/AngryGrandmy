@@ -41,6 +41,20 @@ describe("agent cursor replay", () => {
     })).toEqual({ x: 45, y: 55, eventId: "latest", source: "agent" });
   });
 
+  it("labels a vision-localized element separately from an H-reported cursor", () => {
+    const visionEvent = {
+      ...event("vision", 4, 61, 73),
+      coordinateSource: "vision" as const,
+    };
+
+    expect(getAgentCursorForFrame({
+      events: [visionEvent],
+      personaId: "casey",
+      frameCursor: 4,
+      fallback: null,
+    })).toEqual({ x: 61, y: 73, eventId: "vision", source: "vision" });
+  });
+
   it("labels a heatmap position as estimated when old evidence has no cursor data", () => {
     expect(getAgentCursorForFrame({
       events: [],

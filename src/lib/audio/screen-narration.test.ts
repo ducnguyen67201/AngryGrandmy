@@ -8,7 +8,11 @@ describe("createScreenNarration", () => {
   it("asks OpenAI vision for one concise in-persona thought about the frame", async () => {
     vi.stubEnv("OPENAI_API_KEY", "test-key");
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      output_text: "Oh, I see a lot of text, but I cannot tell what to press next.",
+      output_text: JSON.stringify({
+        text: "Oh, I see a lot of text, but I cannot tell what to press next.",
+        x: 46,
+        y: 62,
+      }),
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -23,6 +27,8 @@ describe("createScreenNarration", () => {
     expect(result).toEqual({
       source: "openai",
       text: "Oh, I see a lot of text, but I cannot tell what to press next.",
+      x: 46,
+      y: 62,
     });
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body.input[1].content).toContainEqual({
@@ -30,6 +36,7 @@ describe("createScreenNarration", () => {
       image_url: "data:image/png;base64,frame",
     });
     expect(JSON.stringify(body)).toContain("older adult");
+    expect(body.text.format.type).toBe("json_object");
   });
 
   it("returns a safe screen-aware fallback when vision is unavailable", async () => {
@@ -84,5 +91,19 @@ describe("createScreenNarration", () => {
       personaDescription: "Careful first-time visitor.",
       objective: "Find the main action.",
     })).resolves.toMatchObject({ source: "fallback" });
+  });
+
+  it("omits vision coordinates when the model reports an invalid point", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify({ text: "I cannot find the control.", x: 140, y: -3 }),
+    }), { status: 200 })));
+
+    await expect(createScreenNarration({
+      imageUrl: "data:image/png;base64,frame",
+      personaName: "Linda",
+      personaDescription: "Careful first-time visitor.",
+      objective: "Find the main action.",
+    })).resolves.toEqual({ source: "openai", text: "I cannot find the control." });
   });
 });
