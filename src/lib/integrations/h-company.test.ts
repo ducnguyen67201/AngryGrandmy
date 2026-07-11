@@ -158,6 +158,24 @@ describe("H Company custom persona dispatch", () => {
     }));
   });
 
+  it("captures reported screen coordinates for live frustration heatmaps", async () => {
+    process.env.HAI_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      new_events: [{
+        message: 'GRANNY_EVENT {"type":"report_frustration","category":"clarity","severity":4,"observation":"I cannot tell what this icon does.","visibleEvidence":"Unlabeled icon in the top-right.","currentUrl":"https://example.com","suggestedDirection":"Add a label.","x":88,"y":17,"step":3}',
+      }],
+      next_index: 1,
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    const batch = await getHCompanySessionEvents("session-live", "linda", 0);
+
+    expect(batch.events[0]).toEqual(expect.objectContaining({
+      type: "frustration",
+      x: 88,
+      y: 17,
+    }));
+  });
+
   it("does not send invalid session identifiers to H", async () => {
     process.env.HAI_API_KEY = "test-key";
     const fetchMock = vi.fn();
