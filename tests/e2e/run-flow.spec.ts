@@ -3,8 +3,8 @@ import { expect, test } from "playwright/test";
 test("keeps the marketing homepage separate from the usability lab", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: /see your product through their eyes/i })).toBeVisible();
-  await expect(page.getByRole("link", { name: /start a usability test/i })).toHaveAttribute("href", "/lab");
+  await expect(page.getByRole("heading", { name: /watch real-world personas test every path/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /start testing/i })).toHaveAttribute("href", "/lab");
   await expect(page.getByLabel("Product URL")).toHaveCount(0);
 });
 
@@ -29,6 +29,7 @@ test("moves through exclusive setup, persona, and replay scenes", async ({ page 
   await page.getByText(/add someone specific/i).click();
   await expect(page.getByLabel("Persona name")).toBeVisible();
   await expect(page.getByRole("group", { name: "Suggested tester roster" })).toBeVisible();
+  await page.getByRole("button", { name: /accept and save personas/i }).click();
 
   const dispatchResponse = page.waitForResponse(
     (response) => response.url().includes("/api/run-h-agents") && response.request().method() === "POST",
@@ -57,10 +58,23 @@ test("keeps replay evidence compact on mobile", async ({ page }) => {
   await page.reload();
   await page.getByRole("button", { name: "Checkout" }).click();
   await page.getByRole("button", { name: "Suggest target users" }).click();
+  await page.getByRole("button", { name: /accept and save personas/i }).click();
   await page.getByRole("button", { name: /dispatch 4 testers/i }).click();
   await expect(page.getByText("Evidence replay")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("View findings")).toBeVisible();
   await expect(page.getByText("Human-friendly score")).not.toBeVisible();
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(width).toBeLessThanOrEqual(390);
+});
+
+test("opens human calibration behind an explicit consent gate", async ({ page }) => {
+  await page.goto("/calibrate");
+
+  await expect(page.getByRole("heading", { name: /one human session/i })).toBeVisible();
+  const start = page.getByRole("button", { name: /start recording/i });
+  await expect(start).toBeDisabled();
+  await page.getByLabel(/tester consented/i).check();
+  await expect(start).toBeDisabled();
+  await page.getByLabel(/behavioral research use/i).check();
+  await expect(start).toBeEnabled();
 });
