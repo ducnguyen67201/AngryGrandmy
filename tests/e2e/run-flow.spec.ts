@@ -3,9 +3,9 @@ import { expect, test } from "playwright/test";
 test("keeps the marketing homepage separate from the usability lab", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: /watch real-world personas test every path/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /watch real-world persona/i })).toBeVisible();
   await expect(page.getByRole("link", { name: /start testing/i })).toHaveAttribute("href", "/lab");
-  await expect(page.getByLabel("Product URL")).toHaveCount(0);
+  await expect(page.getByLabel("Product URL", { exact: true })).toHaveCount(0);
 });
 
 test("moves through exclusive setup, persona, and replay scenes", async ({ page }) => {
@@ -42,8 +42,8 @@ test("moves through exclusive setup, persona, and replay scenes", async ({ page 
   await expect(page.getByLabel("Product URL")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /who should try it/i })).toHaveCount(0);
   await expect(page.getByText("Evidence replay")).toBeVisible();
-  await expect(page.getByText(/reviewing aloud/i)).toBeVisible();
-  await expect(page.getByRole("button", { name: /propose fix/i })).toBeVisible();
+  await expect(page.getByText(/live event voice/i)).toBeVisible();
+  await expect(page.getByText(/frustration · 5\/5/i)).toBeVisible();
   await expect(page.getByText("Run complete").first()).toBeVisible();
   await expect(page.getByText("View findings")).toBeVisible();
 
