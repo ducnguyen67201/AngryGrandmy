@@ -4,7 +4,7 @@ import { ok, validationFailure } from "@/lib/api/responses";
 import { judgeVision } from "@/lib/integrations/nvidia";
 
 const VisionJudgeRequestSchema = z.object({
-  screenshotDataUrl: z.string().startsWith("data:image/").optional(),
+  screenshotDataUrl: z.string().startsWith("data:image/").max(6_000_000).optional(),
   observation: z.string().min(1).max(1000),
 });
 
