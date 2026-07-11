@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ExternalLink, Play, ShieldCheck, Sparkles } from "lucide-react";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import type {
   NormalizedSession,
   RunSnapshot,
+  UsabilityReport,
   VisualAgentState,
 } from "@/lib/schemas/run";
 
@@ -34,11 +35,23 @@ export default function Home() {
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
+  const pendingResultIds = useRef(new Set<string>());
+  const lastReportKey = useRef<string | null>(null);
   const liveMode = snapshot.phase === "running";
   const activeSessions = useMemo(
     () =>
       snapshot.sessions.filter(
         (session) => !TERMINAL_STATUSES.has(session.status),
+      ),
+    [snapshot.sessions],
+  );
+  const sessionsNeedingResults = useMemo(
+    () =>
+      snapshot.sessions.filter(
+        (session) =>
+          TERMINAL_STATUSES.has(session.status) &&
+          !session.finding &&
+          session.errorCode !== "provider_failure",
       ),
     [snapshot.sessions],
   );
@@ -105,9 +118,113 @@ export default function Home() {
     if (activeSessions.length > 0) return;
 
     setStatusLine(
-      "H sessions reached a terminal state. Next build: parse final answers into scored findings.",
+      "H sessions reached a terminal state. Gathering final answers for scoring.",
     );
   }, [activeSessions.length, liveMode]);
+
+  useEffect(() => {
+    if (!liveMode || sessionsNeedingResults.length === 0) return;
+
+    let cancelled = false;
+    const targets = sessionsNeedingResults.filter((session) => {
+      if (pendingResultIds.current.has(session.sessionId)) return false;
+      pendingResultIds.current.add(session.sessionId);
+      return true;
+    });
+
+    if (targets.length === 0) return;
+
+    async function gatherResults() {
+      const results = await Promise.all(
+        targets.map(async (session) => {
+          try {
+            const params = new URLSearchParams({
+              sessionId: session.sessionId,
+              personaId: session.personaId,
+            });
+            const response = await fetch(`/api/session-result?${params}`);
+            const payload = (await response.json()) as {
+              data?: NormalizedSession | null;
+            };
+            return payload.data ?? markResultFailure(session);
+          } catch {
+            return markResultFailure(session);
+          }
+        }),
+      );
+
+      if (cancelled) return;
+
+      const resultsById = new Map(
+        results.map((session) => [session.sessionId, session]),
+      );
+      setSnapshot((current) => ({
+        ...current,
+        sessions: current.sessions.map(
+          (session) => resultsById.get(session.sessionId) ?? session,
+        ),
+        updatedAt: new Date().toISOString(),
+      }));
+      setStatusLine(
+        `Captured ${results.length} H final answer${results.length === 1 ? "" : "s"} for scoring.`,
+      );
+    }
+
+    void gatherResults();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [liveMode, sessionsNeedingResults]);
+
+  useEffect(() => {
+    if (!liveMode || activeSessions.length > 0) return;
+    if (!snapshot.sessions.some((session) => session.finding)) return;
+
+    const reportKey = snapshot.sessions
+      .map((session) => `${session.sessionId}:${session.finding ? "1" : "0"}`)
+      .join("|");
+    if (lastReportKey.current === reportKey) return;
+    lastReportKey.current = reportKey;
+
+    async function scoreRun() {
+      try {
+        const expectedStepBudgetByPersona = Object.fromEntries(
+          snapshot.analysis?.personas.map((persona) => [
+            persona.id,
+            persona.expectedStepBudget,
+          ]) ?? [],
+        );
+        const response = await fetch("/api/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessions: snapshot.sessions,
+            expectedStepBudgetByPersona,
+          }),
+        });
+        const payload = (await response.json()) as {
+          data?: UsabilityReport;
+        };
+        if (!payload.data) return;
+
+        setSnapshot((current) => ({
+          ...current,
+          phase: "report",
+          report: payload.data ?? current.report,
+          selectedPersonaId:
+            current.sessions.find((session) => session.finding)?.personaId ??
+            current.selectedPersonaId,
+          updatedAt: new Date().toISOString(),
+        }));
+        setStatusLine("Live H findings scored into a Human-Friendly report.");
+      } catch {
+        setStatusLine("H findings were captured, but report scoring failed.");
+      }
+    }
+
+    void scoreRun();
+  }, [activeSessions.length, liveMode, snapshot.analysis?.personas, snapshot.sessions]);
 
   async function handleLaunch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -329,6 +446,14 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+function markResultFailure(session: NormalizedSession): NormalizedSession {
+  return {
+    ...session,
+    latestActionLabel: "Finished, but result extraction failed",
+    errorCode: "provider_failure",
+  };
 }
 
 function stationClass(state: VisualAgentState): string {

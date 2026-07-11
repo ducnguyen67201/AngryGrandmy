@@ -4,6 +4,7 @@ import type {
   PersonaScenario,
   ProductAnalysis,
 } from "@/lib/schemas/run";
+import { normalizeSessionResult } from "@/lib/results/normalize-session-result";
 
 const H_BASE_URL =
   process.env.HAI_AGENTS_BASE_URL ?? "https://agp.eu.hcompany.ai/api/v2";
@@ -94,6 +95,26 @@ export async function getHCompanySessionStatus(
   };
 }
 
+export async function getHCompanySessionResult(
+  sessionId: string,
+  personaId: string,
+): Promise<NormalizedSession> {
+  const sessionJson = await hFetch<HSessionResponse>(`/sessions/${sessionId}`);
+  const eventsJson = await hFetch<HSessionResponse>(
+    `/sessions/${sessionId}/events`,
+  ).catch(() => null);
+  const baseSession = await getHCompanySessionStatus(sessionId, personaId);
+
+  return normalizeSessionResult({
+    sessionId,
+    personaId,
+    status: baseSession.status,
+    baseSession,
+    finalAnswer: extractFinalAnswer(sessionJson),
+    eventText: extractEventText(eventsJson),
+  });
+}
+
 function buildPersonaPrompt(
   request: AnalyzeRequest,
   analysis: ProductAnalysis,
@@ -168,4 +189,53 @@ function readString(source: HSessionResponse, paths: string[]): string | null {
   }
 
   return null;
+}
+
+function extractFinalAnswer(source: unknown): string | null {
+  const preferred = readDeepString(source, [
+    "answer",
+    "final_answer",
+    "finalAnswer",
+    "output",
+    "result",
+    "summary",
+    "message",
+  ]);
+
+  if (preferred) return preferred;
+
+  const fallback = collectStrings(source)
+    .filter((value) => value.length > 24)
+    .sort((a, b) => b.length - a.length)[0];
+
+  return fallback ?? null;
+}
+
+function extractEventText(source: unknown): string[] {
+  return collectStrings(source)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 16)
+    .slice(-40);
+}
+
+function readDeepString(source: unknown, keys: string[]): string | null {
+  if (!source || typeof source !== "object") return null;
+
+  for (const [key, value] of Object.entries(source)) {
+    if (keys.includes(key) && typeof value === "string" && value.trim()) {
+      return value;
+    }
+
+    const nested = readDeepString(value, keys);
+    if (nested) return nested;
+  }
+
+  return null;
+}
+
+function collectStrings(source: unknown): string[] {
+  if (typeof source === "string") return [source];
+  if (!source || typeof source !== "object") return [];
+  if (Array.isArray(source)) return source.flatMap(collectStrings);
+  return Object.values(source).flatMap(collectStrings);
 }
