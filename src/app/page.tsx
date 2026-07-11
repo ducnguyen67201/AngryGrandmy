@@ -27,6 +27,7 @@ import type {
 } from "@/lib/schemas/run";
 import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
+import { getRunGuidance } from "@/lib/ui/run-guidance";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -170,6 +171,7 @@ export default function Home() {
     heatmapLine,
     liveMode,
   });
+  const runGuidance = getRunGuidance({ snapshot, loading, dispatching });
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
   );
@@ -707,6 +709,51 @@ export default function Home() {
       </section>
 
     <main className="lab-shell min-h-screen bg-paper px-5 py-16 text-ink md:px-8" id="lab">
+      <section className="mx-auto mb-6 max-w-7xl rounded-lg border border-ink/12 bg-white/72 p-4 shadow-sm md:p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-ink/42">
+              Test workflow
+            </p>
+            <h2 className="mt-1 text-2xl font-black">Website to decision, in one run</h2>
+          </div>
+          <p className="text-sm font-semibold text-ink/55">
+            Active: {runGuidance.steps.find((step) => step.id === runGuidance.activeStep)?.label}
+          </p>
+        </div>
+        <ol className="mt-5 grid gap-2 md:grid-cols-5" aria-label="Usability test workflow">
+          {runGuidance.steps.map((step, index) => (
+            <li
+              aria-current={step.status === "active" ? "step" : undefined}
+              className={`rounded-md border p-3 transition ${
+                step.status === "active"
+                  ? "border-mint bg-mint/12 shadow-[0_10px_26px_rgba(98,196,155,0.16)]"
+                  : step.status === "complete"
+                    ? "border-ink/10 bg-ink/[0.035]"
+                    : "border-ink/8 bg-white/50 opacity-60"
+              }`}
+              key={step.id}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`grid h-6 w-6 place-items-center rounded-full text-xs font-black ${
+                    step.status === "active"
+                      ? "bg-mint text-ink"
+                      : step.status === "complete"
+                        ? "bg-ink text-paper"
+                        : "bg-ink/8 text-ink/45"
+                  }`}
+                >
+                  {step.status === "complete" ? "✓" : index + 1}
+                </span>
+                <p className="text-sm font-black">{step.label}</p>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-ink/55">{step.description}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.92fr_1.08fr]">
         <div className="flex flex-col gap-6">
           <div>
@@ -1117,6 +1164,29 @@ export default function Home() {
                 <p className="text-sm leading-6 text-ink/72">{recommendation}</p>
               </div>
             ))}
+          </div>
+        </article>
+
+        <article className="rounded-lg border border-mint/45 bg-mint/10 p-5 lg:col-span-2">
+          <div className="grid gap-5 lg:grid-cols-[0.68fr_1.32fr] lg:items-start">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.16em] text-mint/90">
+                {runGuidance.nextAction.eyebrow}
+              </p>
+              <h3 className="mt-2 text-3xl font-black">{runGuidance.nextAction.title}</h3>
+              <p className="mt-3 text-sm leading-6 text-ink/68">
+                {runGuidance.nextAction.detail}
+              </p>
+            </div>
+            <div className="rounded-md border border-ink/10 bg-white/80 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-ink/40">
+                Highest-impact move
+              </p>
+              <p className="mt-2 text-base font-bold leading-7 text-ink/78">
+                {runGuidance.nextAction.recommendation ??
+                  "Complete the current step to unlock an evidence-backed recommendation."}
+              </p>
+            </div>
           </div>
         </article>
       </section>
