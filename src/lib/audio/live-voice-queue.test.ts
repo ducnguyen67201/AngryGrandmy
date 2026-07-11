@@ -103,11 +103,23 @@ describe("live persona voice queue", () => {
       enabled: true,
       events: [
         { id: "frame", personaId: "linda", type: "viewport", cursor: 2, imageUrl: "data:image/png;base64,one" },
-        { id: "thought", personaId: "linda", type: "narration", cursor: 2, text: "I can see the button." },
+        { id: "thought", personaId: "linda", type: "narration", cursor: 2, text: "I can see the button.", x: 52, y: 44 },
       ],
       selectedPersonaId: "linda",
       processedEventIds: new Set(),
     })).toBeNull();
+  });
+
+  it("uses vision to locate a same-frame narration that has no coordinates", () => {
+    expect(getScreenNarrationCandidate({
+      enabled: true,
+      events: [
+        { id: "frame", personaId: "linda", type: "viewport", cursor: 2, imageUrl: "data:image/png;base64,one" },
+        { id: "thought", personaId: "linda", type: "narration", cursor: 2, text: "I can see the button." },
+      ],
+      selectedPersonaId: "linda",
+      processedEventIds: new Set(),
+    })?.id).toBe("frame");
   });
 
   it("allows the active replay frame to be localized when narration belongs to a later frame", () => {
