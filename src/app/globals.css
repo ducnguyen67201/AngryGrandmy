@@ -124,6 +124,21 @@ a:focus-visible {
   box-shadow: 0 10px 26px rgba(83, 91, 255, 0.3);
 }
 .hero-form button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.hero-start-button {
+  min-height: 50px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: white;
+  border-radius: 10px;
+  background: linear-gradient(105deg, #258dff, #9852ff);
+  box-shadow: 0 10px 26px rgba(83, 91, 255, 0.3);
+  font-weight: 800;
+  transition: filter .2s ease, transform .2s ease;
+}
+.hero-start-button:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .hero-form > p { display: flex; gap: 7px; align-items: center; margin: 10px 0 0; color: #7f8da9; font-size: 11px; }
 .hero-form.has-launched { border-color: rgba(85, 216, 193, .38); box-shadow: 0 20px 70px rgba(43, 141, 182, .12); }
 .launch-status { min-height: 0; color: #72dac8; font-size: 10px; font-weight: 750; }
@@ -417,6 +432,8 @@ a:focus-visible {
 .landing-footer { padding: 25px max(32px, calc((100% - 1180px) / 2)); display: flex; justify-content: space-between; gap: 30px; color: #606f8d; border-top: 1px solid rgba(130,148,190,.12); background: #070d1c; font-size: 11px; }
 .landing-footer span { color: #cbd4e6; font-size: 14px; font-weight: 850; }
 .landing-footer p { margin: 0; text-align: right; }
+.lab-shell { color-scheme: light; }
+.hotspot-pulse { animation: hotspot-pulse 1.45s ease-in-out infinite; }
 
 @keyframes aurora-spin { to { transform: rotate(360deg); } }
 @keyframes live-pulse { 50% { opacity: .45; transform: scale(.8); } }
@@ -447,6 +464,20 @@ a:focus-visible {
   30% { left: var(--cursor-x-1); top: var(--cursor-y-1); }
   52% { left: var(--cursor-x-2); top: var(--cursor-y-2); }
   78% { left: var(--cursor-x-3); top: var(--cursor-y-3); }
+}
+@keyframes hotspot-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(223, 90, 71, 0.52);
+    transform: translate(-50%, -50%) scale(1);
+  }
+  72% {
+    box-shadow: 0 0 0 14px rgba(223, 90, 71, 0);
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(223, 90, 71, 0);
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 @media (max-width: 1180px) {

@@ -295,20 +295,28 @@ export const demoSessions: NormalizedSession[] = [
   },
 ];
 
-export function createDemoRun(): RunSnapshot {
+type DemoRunOverrides = {
+  url?: string;
+  objective?: string;
+  analysis?: ProductAnalysis;
+  id?: string;
+};
+
+export function createDemoRun(overrides: DemoRunOverrides = {}): RunSnapshot {
+  const analysis = overrides.analysis ?? demoAnalysis;
   const expectedBudgets = Object.fromEntries(
-    demoAnalysis.personas.map((persona) => [
+    analysis.personas.map((persona) => [
       persona.id,
       persona.expectedStepBudget,
     ]),
   );
 
   return {
-    id: "demo-run",
+    id: overrides.id ?? "demo-run",
     phase: "report",
-    url: "https://mission-street-health.example",
-    objective: "Book a doctor's visit",
-    analysis: demoAnalysis,
+    url: overrides.url ?? "https://mission-street-health.example",
+    objective: overrides.objective ?? "Book a doctor's visit",
+    analysis,
     sessions: demoSessions,
     selectedPersonaId: "joan",
     report: calculateUsabilityReport(demoSessions, expectedBudgets),

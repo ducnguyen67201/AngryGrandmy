@@ -46,6 +46,7 @@ export const PersonaScenarioSchema = z.object({
   stopConditions: z.array(z.string().min(1)).min(1),
   expectedStepBudget: z.number().int().min(4).max(30),
   introLine: z.string().min(1).max(240),
+  dispatchInstruction: z.string().min(1).max(4000).optional(),
   voiceSlot: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
   visualVariant: z.union([
     z.literal(0),
