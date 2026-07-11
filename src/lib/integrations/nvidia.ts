@@ -19,6 +19,7 @@ export async function judgeVision(
     process.env.NVIDIA_BASE_URL ?? "https://integrate.api.nvidia.com/v1";
   const model =
     process.env.NVIDIA_MODEL ??
+    process.env.NVIDIA_HEATMAP_MODEL ??
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
 
   if (!apiKey) {

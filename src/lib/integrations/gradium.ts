@@ -9,6 +9,7 @@ export type VoiceReaction = {
   source: "gradium" | "text";
   audioUrl: string | null;
   audioBase64: string | null;
+  audioMime: string | null;
   transcript: string;
 };
 
@@ -16,7 +17,9 @@ export async function createVoiceReaction(
   request: VoiceReactionRequest,
 ): Promise<VoiceReaction> {
   const apiKey = process.env.GRADIUM_API_KEY;
-  const endpoint = process.env.GRADIUM_API_URL;
+  const endpoint =
+    process.env.GRADIUM_API_URL ??
+    "https://api.gradium.ai/api/post/speech/tts";
 
   if (!apiKey || !endpoint) {
     return textFallback(request.text);
@@ -27,25 +30,29 @@ export async function createVoiceReaction(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
       },
       body: JSON.stringify({
         text: request.text,
-        voice: process.env[`GRADIUM_VOICE_${request.voiceSlot}`] ?? "grandma",
-        personaId: request.personaId,
+        voice_id:
+          process.env[`GRADIUM_VOICE_${request.voiceSlot}`] ??
+          process.env.GRADIUM_VOICE_ID ??
+          "YTpq7expH9539ERJ",
+        output_format: process.env.GRADIUM_OUTPUT_FORMAT ?? "wav",
+        only_audio: true,
       }),
       signal: AbortSignal.timeout(30_000),
     });
 
     if (!response.ok) throw new Error(`Gradium failed with ${response.status}`);
-    const json = (await response.json()) as Record<string, unknown>;
+    const audio = Buffer.from(await response.arrayBuffer()).toString("base64");
 
     return {
       configured: true,
       source: "gradium",
-      audioUrl: typeof json.audioUrl === "string" ? json.audioUrl : null,
-      audioBase64:
-        typeof json.audioBase64 === "string" ? json.audioBase64 : null,
+      audioUrl: null,
+      audioBase64: audio,
+      audioMime: response.headers.get("content-type") ?? "audio/wav",
       transcript: request.text,
     };
   } catch {
@@ -59,6 +66,7 @@ function textFallback(text: string, configured = false): VoiceReaction {
     source: "text",
     audioUrl: null,
     audioBase64: null,
+    audioMime: null,
     transcript: text,
   };
 }

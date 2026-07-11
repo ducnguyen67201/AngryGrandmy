@@ -7,7 +7,7 @@ import type { NormalizedSession, ProductAnalysis } from "@/lib/schemas/run";
 
 export type HotspotLocalizationResult = {
   hotspots: VisualHotspot[];
-  mode: "openai" | "heuristic";
+  mode: "openai" | "nvidia" | "heuristic";
   model: string | null;
   fallbackReason: string | null;
 };
@@ -27,6 +27,11 @@ const OPENAI_HEATMAP_MODEL =
   process.env.OPENAI_HEATMAP_MODEL ??
   process.env.OPENAI_PERSONA_MODEL ??
   "gpt-4.1-mini";
+const NVIDIA_BASE_URL =
+  process.env.NVIDIA_BASE_URL ?? "https://integrate.api.nvidia.com/v1";
+const NVIDIA_HEATMAP_MODEL =
+  process.env.NVIDIA_HEATMAP_MODEL ??
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning";
 
 const ModelHotspotResponseSchema = z.object({
   hotspots: z.array(
@@ -56,12 +61,40 @@ export async function localizeHotspots(
     };
   }
 
+  if (process.env.NVIDIA_API_KEY) {
+    try {
+      const localized = await localizeWithNvidia(
+        heuristic,
+        analysis,
+        screenshotDataUrl,
+      );
+      return {
+        hotspots: localized,
+        mode: "nvidia",
+        model: NVIDIA_HEATMAP_MODEL,
+        fallbackReason: null,
+      };
+    } catch (error) {
+      if (!process.env.OPENAI_API_KEY) {
+        return {
+          hotspots: heuristic,
+          mode: "heuristic",
+          model: null,
+          fallbackReason:
+            error instanceof Error
+              ? error.message
+              : "NVIDIA hotspot localization failed.",
+        };
+      }
+    }
+  }
+
   if (!process.env.OPENAI_API_KEY) {
     return {
       hotspots: heuristic,
       mode: "heuristic",
       model: null,
-      fallbackReason: "OPENAI_API_KEY is not configured.",
+      fallbackReason: "No model localization key is configured.",
     };
   }
 
@@ -88,6 +121,83 @@ export async function localizeHotspots(
           : "OpenAI hotspot localization failed.",
     };
   }
+}
+
+async function localizeWithNvidia(
+  heuristic: VisualHotspot[],
+  analysis: ProductAnalysis | null,
+  screenshotDataUrl?: string,
+): Promise<VisualHotspot[]> {
+  const userContent: Array<Record<string, unknown>> = [
+    {
+      type: "text",
+      text: buildLocalizationPrompt(heuristic, analysis),
+    },
+  ];
+
+  if (screenshotDataUrl) {
+    userContent.push({
+      type: "image_url",
+      image_url: { url: screenshotDataUrl },
+    });
+  }
+
+  const response = await fetch(
+    `${NVIDIA_BASE_URL.replace(/\/$/, "")}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: NVIDIA_HEATMAP_MODEL,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You localize usability friction on a web page. Return JSON only.",
+          },
+          {
+            role: "user",
+            content: userContent,
+          },
+        ],
+        temperature: 0.2,
+        top_p: 0.95,
+        max_tokens: 4096,
+        chat_template_kwargs: { enable_thinking: true },
+        reasoning_budget: 2048,
+      }),
+      signal: AbortSignal.timeout(45_000),
+    },
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `NVIDIA hotspot localization failed with ${response.status}: ${body.slice(0, 360)}`,
+    );
+  }
+
+  const json = (await response.json()) as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+  };
+  const content = json.choices?.[0]?.message?.content;
+  const parsed = ModelHotspotResponseSchema.parse(parseModelJson(content));
+  const updates = new Map(parsed.hotspots.map((hotspot) => [hotspot.id, hotspot]));
+
+  return heuristic.map((hotspot) => {
+    const update = updates.get(hotspot.id);
+    if (!update) return hotspot;
+
+    return {
+      ...hotspot,
+      x: clampPercent(update.x),
+      y: clampPercent(update.y),
+      label: update.label ?? hotspot.label,
+    };
+  });
 }
 
 async function localizeWithOpenAI(

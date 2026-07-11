@@ -97,6 +97,22 @@ describe("run schemas", () => {
     ).toThrow("Private, localhost, and link-local URLs are blocked.");
   });
 
+  it("blocks embedded URL credentials while accepting a public HTTPS target", () => {
+    expect(() =>
+      validateAnalyzeRequest({
+        url: "https://user:password@example.com",
+        authorizationConfirmed: true
+      })
+    ).toThrow("URLs with embedded credentials are not allowed.");
+
+    expect(
+      validateAnalyzeRequest({
+        url: "https://example.com/product",
+        authorizationConfirmed: true
+      })
+    ).toMatchObject({ url: "https://example.com/product" });
+  });
+
   it("requires exactly four persona scenarios", () => {
     expect(() => productAnalysisSchema.parse(analysis)).not.toThrow();
 
