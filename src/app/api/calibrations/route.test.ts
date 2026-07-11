@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { POST } from "./route";
 
 let directory = "";
@@ -19,10 +19,7 @@ function request(overrides?: { consent?: string; video?: File }) {
     "video",
     overrides?.video ?? new File(["recording"], "session.webm", { type: "video/webm" }),
   );
-  return new NextRequest("http://localhost/api/calibrations", {
-    method: "POST",
-    body: form,
-  });
+  return { formData: async () => form } as NextRequest;
 }
 
 describe("POST /api/calibrations", () => {
@@ -42,7 +39,7 @@ describe("POST /api/calibrations", () => {
     const response = await POST(request());
     const payload = await response.json();
 
-    expect(response.status).toBe(201);
+    expect(response.status, JSON.stringify(payload)).toBe(201);
     expect(payload.data).toMatchObject({
       testerName: "Margaret",
       status: "needs_review",
