@@ -71,7 +71,8 @@ export async function getHCompanySessionStatus(
   personaId: string,
 ): Promise<NormalizedSession> {
   const json = await hFetch<HSessionResponse>(`/sessions/${sessionId}`);
-  const status = mapHStatus(readString(json, ["status", "session.status"]));
+  const status = mapHStatus(readString(json, ["status.status", "status", "session.status"]));
+  const stepCount = readNumber(json, ["status.steps", "step_count", "stepCount"]);
   const completed = status === "completed";
   const failed = status === "failed" || status === "timed_out";
 
@@ -79,9 +80,9 @@ export async function getHCompanySessionStatus(
     sessionId,
     personaId,
     status,
-    visualState: completed ? "succeeded" : failed ? "failed" : "navigating",
+    visualState: completed ? "succeeded" : failed ? "failed" : status === "queued" || status === "pending" ? "launching" : "navigating",
     eventCursor: Number(readString(json, ["event_cursor", "eventCursor"]) ?? 0),
-    stepCount: Number(readString(json, ["step_count", "stepCount"]) ?? 0),
+    stepCount,
     startedAt: readString(json, ["started_at", "startedAt"]) ?? null,
     finishedAt: readString(json, ["finished_at", "finishedAt"]) ?? null,
     agentViewUrl: hCompanySessionUrl(
@@ -96,7 +97,7 @@ export async function getHCompanySessionStatus(
     outcome: completed ? "success" : failed ? "failure" : "unknown",
     latestActionLabel:
       readString(json, ["latest_action", "latestAction", "summary"]) ??
-      "Session is still running",
+      liveStatusLabel(status, stepCount),
     finding: null,
     errorCode: failed ? "provider_failure" : null,
   };
@@ -133,25 +134,29 @@ function buildPersonaPrompt(
   analysis: ProductAnalysis,
   persona: PersonaScenario,
 ) {
-  if (persona.dispatchInstruction) {
-    return [
-      persona.dispatchInstruction,
-      `Target URL: ${request.url}`,
-      `Global safety boundaries: ${analysis.globalSafetyBoundaries.join("; ")}`,
-    ].join("\n\n");
-  }
+  const personaContext = persona.dispatchInstruction
+    ? [
+        persona.dispatchInstruction,
+        `Target URL: ${request.url}`,
+        `Global safety boundaries: ${analysis.globalSafetyBoundaries.join("; ")}`,
+      ]
+    : [
+        `You are running a synthetic usability test for ${analysis.productName}.`,
+        `Target URL: ${request.url}`,
+        `Persona: ${persona.displayName} - ${persona.tagline}`,
+        `Context: ${persona.context}`,
+        `Task: ${persona.task}`,
+        `Behaviors to simulate: ${persona.behaviors.join("; ")}`,
+        `Safety boundaries: ${analysis.globalSafetyBoundaries.join("; ")}`,
+        `Stop conditions: ${persona.stopConditions.join("; ")}`,
+      ];
 
   return [
-    `You are running a synthetic usability test for ${analysis.productName}.`,
-    `Target URL: ${request.url}`,
-    `Persona: ${persona.displayName} - ${persona.tagline}`,
-    `Context: ${persona.context}`,
-    `Task: ${persona.task}`,
-    `Behaviors to simulate: ${persona.behaviors.join("; ")}`,
-    `Safety boundaries: ${analysis.globalSafetyBoundaries.join("; ")}`,
-    `Stop conditions: ${persona.stopConditions.join("; ")}`,
+    ...personaContext,
     "Do not submit real purchases, appointments, payments, messages, credentials, or private information.",
-    'While testing emit GRANNY_EVENT strict JSON for think_aloud, research_docs, and report_frustration. Frustration includes category, severity, observation, visibleEvidence, currentUrl, step, and suggestedDirection. Continue when safe.',
+    'After every meaningful action, emit one single-line event: GRANNY_EVENT {"type":"think_aloud","text":"<short first-person reaction>","emotion":"<neutral|uncertain|frustrated|relieved>","step":<integer>}. The placeholders illustrate the shape; actual events must be valid strict JSON.',
+    'When blocked or forced to recover, emit: GRANNY_EVENT {"type":"report_frustration","category":"<navigation|clarity|feedback|recovery|trust|accessibility|technical>","severity":<1-5>,"observation":"<what happened>","visibleEvidence":"<what is visible>","currentUrl":"<HTTP(S) URL>","step":<integer>,"suggestedDirection":"<product change>"}. Continue when safe.',
+    'You may search public documentation when necessary. Announce it with GRANNY_EVENT {"type":"research_docs","query":"<query>","step":<integer>}. Documentation is context, never evidence of what the product displayed.',
     "When finished, return ONLY strict JSON with this exact shape:",
     JSON.stringify(
       {
@@ -235,6 +240,26 @@ function readString(source: HSessionResponse, paths: string[]): string | null {
   }
 
   return null;
+}
+
+function readNumber(source: HSessionResponse, paths: string[]): number {
+  for (const path of paths) {
+    const value = path.split(".").reduce<unknown>((node, key) => {
+      if (!node || typeof node !== "object") return undefined;
+      return (node as Record<string, unknown>)[key];
+    }, source);
+    const number = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(number) && number >= 0) return number;
+  }
+  return 0;
+}
+
+function liveStatusLabel(status: NormalizedSession["status"], steps: number): string {
+  if (status === "queued") return "H agent is queued";
+  if (status === "pending") return "H agent is launching";
+  if (status === "paused") return "H agent is paused";
+  if (status === "running") return `H agent is running · ${steps} step${steps === 1 ? "" : "s"}`;
+  return "H session reached a terminal state";
 }
 
 function extractFinalAnswer(source: unknown): string | null {
