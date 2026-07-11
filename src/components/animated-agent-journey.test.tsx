@@ -1,10 +1,12 @@
 import { render, screen } from "@testing-library/react";
+import { createElement } from "react";
+import { describe, expect, it } from "vitest";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import { AnimatedAgentJourney } from "./animated-agent-journey";
 
 describe("AnimatedAgentJourney", () => {
   it("presents the live trajectory as an accessible product visualization", () => {
-    render(<AnimatedAgentJourney snapshot={createDemoRun()} />);
+    render(createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }));
 
     expect(
       screen.getByRole("region", { name: /live synthetic usability trajectory/i }),
@@ -15,12 +17,12 @@ describe("AnimatedAgentJourney", () => {
   });
 
   it("identifies every persona and exposes their current result", () => {
-    render(<AnimatedAgentJourney snapshot={createDemoRun()} />);
+    render(createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }));
 
     expect(screen.getByText("Linda")).toBeInTheDocument();
     expect(screen.getByText("Rosa")).toBeInTheDocument();
     expect(screen.getByText("Mei")).toBeInTheDocument();
     expect(screen.getByText("Joan")).toBeInTheDocument();
-    expect(screen.getByText("Blocked")).toBeInTheDocument();
+    expect(screen.getAllByText("Blocked")).not.toHaveLength(0);
   });
 });
