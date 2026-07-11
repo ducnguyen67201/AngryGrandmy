@@ -54,3 +54,11 @@ This iteration uses Gradium's existing REST TTS response and a browser audio que
 - RED checkpoint: `bd5fe30 test: reproduce silent replay startup` requires the visible persona line to prime replay before frame narration arrives.
 - GREEN checkpoint: `1d25127 fix: prime replay narration immediately` clears stale frame markers, queues an immediate browser-spoken primer, identifies `Browser speaking` versus `Gradium speaking` in the status, and converts provider/network failures into text speech.
 - Verification: 42 files / 144 tests pass; focused voice coverage is 100% lines/functions and above 92% statements/branches; typecheck, lint, build, and audit pass.
+
+### Screen-action narration correction
+
+- Reported behavior: the overlay voice was reading the persona/finding quote, but the intended demo is a screen commentator describing what the agent is doing on the page.
+- RED checkpoint: `dfda9f5 test: reproduce action narration replay voice` fails when replay priming depends on persona text, when an existing H thought blocks screen narration, and when the vision prompt still asks for first-person thoughts.
+- GREEN checkpoint: `794e0da fix: narrate replay screen actions` makes screenshot-backed replay prefer `/api/screen-narration`, stops H thought narration when a viewport frame exists, keeps screen narration active even when H already provided a thought, updates the vision prompt to third-person visible action commentary, and changes the manual button to narrate the current screen.
+- Verification: `pnpm vitest run src/lib/audio/live-voice-queue.test.ts src/lib/audio/screen-narration.test.ts` passes 18 tests; `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
+- Coverage: focused audio coverage is 94.23% statements, 89.47% branches, 100% functions, and 97.67% lines.
