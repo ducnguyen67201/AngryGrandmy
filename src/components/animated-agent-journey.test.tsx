@@ -1,8 +1,23 @@
 import { render, screen } from "@testing-library/react";
-import { createElement } from "react";
-import { describe, expect, it } from "vitest";
+import { act, createElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import { AnimatedAgentJourney } from "./animated-agent-journey";
+
+const motionPreference = vi.hoisted(() => ({ reduced: false }));
+
+vi.mock("motion/react", async () => {
+  const actual = await vi.importActual<typeof import("motion/react")>("motion/react");
+  return {
+    ...actual,
+    useReducedMotion: () => motionPreference.reduced,
+  };
+});
+
+afterEach(() => {
+  motionPreference.reduced = false;
+  vi.useRealTimers();
+});
 
 describe("AnimatedAgentJourney", () => {
   it("presents the live trajectory as an accessible product visualization", () => {
@@ -24,5 +39,35 @@ describe("AnimatedAgentJourney", () => {
     expect(screen.getByText("Mei")).toBeInTheDocument();
     expect(screen.getByText("Joan")).toBeInTheDocument();
     expect(screen.getAllByText("Blocked")).not.toHaveLength(0);
+  });
+
+  it("advances the visible step while motion is enabled", () => {
+    vi.useFakeTimers();
+    render(createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }));
+
+    act(() => vi.advanceTimersByTime(2400));
+
+    expect(screen.getByText("Step 5 of 7")).toBeInTheDocument();
+  });
+
+  it("keeps the initial step still when reduced motion is requested", () => {
+    motionPreference.reduced = true;
+    vi.useFakeTimers();
+    render(createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }));
+
+    act(() => vi.advanceTimersByTime(4800));
+
+    expect(screen.getByText("Step 4 of 7")).toBeInTheDocument();
+  });
+
+  it("falls back to queued personas when live session data is unavailable", () => {
+    const snapshot = createDemoRun();
+    render(
+      createElement(AnimatedAgentJourney, {
+        snapshot: { ...snapshot, sessions: [] },
+      }),
+    );
+
+    expect(screen.getAllByText("Queued")).toHaveLength(4);
   });
 });
