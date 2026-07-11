@@ -68,8 +68,6 @@ import {
   type AgentRuntimeEvent,
 } from "@/lib/runtime/agent-events";
 import {
-  buildAnimatedCursorFallback,
-  buildDemoCursorFallback,
   getAgentCursorForFrame,
 } from "@/lib/runtime/agent-cursor";
 
@@ -113,6 +111,8 @@ type ScreenNarrationPayload = {
   data?: {
     source: "openai" | "fallback";
     text: string;
+    x?: number;
+    y?: number;
   };
   error?: { message?: string };
 };
@@ -198,7 +198,6 @@ export default function Home() {
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
   const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
-  const [cursorAnimationTick, setCursorAnimationTick] = useState(0);
   const [activeCalibration, setActiveCalibration] = useState<CalibrationSession | null>(null);
   const [regressionLine, setRegressionLine] = useState("Guarded regression job ready.");
   const [statusLine, setStatusLine] = useState(
@@ -403,17 +402,7 @@ export default function Home() {
         events: liveEvents,
         personaId: selectedPersona.id,
         frameCursor: eventCursorLimit,
-        fallback:
-          liveMode && replayFrameIndex === null
-            ? buildAnimatedCursorFallback(
-                activeViewportFrameIndex,
-                viewportFrames.length,
-                cursorAnimationTick,
-              )
-            : buildDemoCursorFallback(
-                activeViewportFrameIndex,
-                viewportFrames.length,
-              ),
+        fallback: null,
       })
     : null;
   const liveViewportPresentation = getLiveViewportPresentation({
@@ -608,15 +597,6 @@ export default function Home() {
   }, [selectedPersona?.id]);
 
   useEffect(() => {
-    if (!liveMode || replayFrameIndex !== null || viewportFrames.length === 0) return;
-    const timer = window.setInterval(
-      () => setCursorAnimationTick((current) => current + 1),
-      700,
-    );
-    return () => window.clearInterval(timer);
-  }, [liveMode, replayFrameIndex, viewportFrames.length]);
-
-  useEffect(() => {
     if (!replayPlaying || viewportFrames.length < 2) return;
 
     const timer = window.setInterval(() => {
@@ -685,10 +665,8 @@ export default function Home() {
 
   useEffect(() => {
     if (
-      !liveMode ||
+      snapshot.sessions.length === 0 ||
       !liveVoiceEnabled ||
-      replayPlaying ||
-      replayFrameIndex !== null ||
       !selectedPersona ||
       !liveViewport?.imageUrl
     ) {
@@ -700,7 +678,7 @@ export default function Home() {
         event.id === liveViewport.id ||
         (event.personaId === selectedPersona.id &&
           event.type === "narration" &&
-          event.cursor >= liveViewport.cursor),
+          event.cursor === liveViewport.cursor),
     );
     const candidate = getScreenNarrationCandidate({
       enabled: liveVoiceEnabledRef.current,
@@ -742,6 +720,13 @@ export default function Home() {
           type: "narration",
           text: payload.data.text,
           emotion: "observing",
+          ...(typeof payload.data.x === "number" && typeof payload.data.y === "number"
+            ? {
+                x: payload.data.x,
+                y: payload.data.y,
+                coordinateSource: "vision" as const,
+              }
+            : {}),
         };
         const voiceItem = await synthesizeVoiceItem({
           eventId: narrationId,
@@ -770,16 +755,14 @@ export default function Home() {
     };
   }, [
     liveEvents,
-    liveMode,
     liveVoiceEnabled,
     liveViewport,
     objective,
     queueLiveVoiceItem,
-    replayFrameIndex,
-    replayPlaying,
     selectedPersona,
     selectedSession?.sessionId,
     snapshot.objective,
+    snapshot.sessions.length,
     snapshot.url,
     synthesizeVoiceItem,
   ]);
@@ -2757,20 +2740,22 @@ export default function Home() {
                     />
                   ) : null}
                   {agentCursorPoint ? (
-                    <div
-                      aria-label={`${selectedPersona?.displayName ?? "Agent"} cursor, ${agentCursorPoint.source === "agent" ? "reported by H" : "estimated for legacy replay"}`}
-                      className={`agent-cursor ${agentCursorPoint.source === "evidence" ? "is-estimated" : "is-reported"}`}
-                      data-cursor-source={agentCursorPoint.source}
-                      style={{
-                        left: `${agentCursorPoint.x}%`,
-                        top: `${agentCursorPoint.y}%`,
-                      }}
-                    >
-                      <i aria-hidden="true" />
-                      <MousePointer2 aria-hidden="true" size={30} />
-                      <span>
-                        {selectedPersona?.displayName ?? "Agent"} cursor · {agentCursorPoint.source === "agent" ? "live" : "estimated"}
-                      </span>
+                    <div className="agent-viewport-coordinate-space">
+                      <div
+                        aria-label={`${selectedPersona?.displayName ?? "Agent"} cursor, ${agentCursorPoint.source === "agent" ? "reported by H" : agentCursorPoint.source === "vision" ? "localized from the screenshot" : "estimated for legacy replay"}`}
+                        className={`agent-cursor ${agentCursorPoint.source === "agent" ? "is-reported" : agentCursorPoint.source === "vision" ? "is-vision" : "is-estimated"}`}
+                        data-cursor-source={agentCursorPoint.source}
+                        style={{
+                          left: `${agentCursorPoint.x}%`,
+                          top: `${agentCursorPoint.y}%`,
+                        }}
+                      >
+                        <i aria-hidden="true" />
+                        <MousePointer2 aria-hidden="true" size={30} />
+                        <span>
+                          {selectedPersona?.displayName ?? "Agent"} cursor · {agentCursorPoint.source === "agent" ? "H reported" : agentCursorPoint.source === "vision" ? "vision located" : "estimated"}
+                        </span>
+                      </div>
                     </div>
                   ) : liveViewportPresentation.showSyntheticScaffold ? (
                     <div className="agent-cursor is-placeholder" style={{ left: "62%", top: "62%" }}>

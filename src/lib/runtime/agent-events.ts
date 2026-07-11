@@ -25,6 +25,7 @@ export type AgentRuntimeEvent = {
   recommendation?: string;
   x?: number;
   y?: number;
+  coordinateSource?: "agent" | "vision";
 };
 
 const MAX_VIEWPORT_FRAMES_PER_PERSONA = 80;

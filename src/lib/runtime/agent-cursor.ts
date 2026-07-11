@@ -4,7 +4,7 @@ export type AgentCursorPoint = {
   x: number;
   y: number;
   eventId: string;
-  source: "agent" | "evidence";
+  source: "agent" | "vision" | "evidence";
 };
 
 export function buildDemoCursorFallback(
@@ -66,7 +66,7 @@ export function getAgentCursorForFrame({
       x: reported.x,
       y: reported.y,
       eventId: reported.id,
-      source: "agent",
+      source: reported.coordinateSource === "vision" ? "vision" : "agent",
     };
   }
 

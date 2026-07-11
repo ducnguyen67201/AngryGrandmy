@@ -160,8 +160,9 @@
 .browser-bar i { width: 7px; height: 7px; border-radius: 50%; background: #c4c9c8; }
 .browser-bar span { min-width: 0; margin-left: 5px; padding: 6px 10px; flex: 1; overflow: hidden; color: #7b8381; border-radius: 6px; background: white; text-overflow: ellipsis; white-space: nowrap; }
 .browser-bar b { color: #2b8c68; text-transform: capitalize; }
-.browser-screen { height: 385px; position: relative; overflow: hidden; background: linear-gradient(135deg, #fbfcfc, #eef2f1); }
+.browser-screen { height: 385px; position: relative; overflow: hidden; container-type: size; background: linear-gradient(135deg, #fbfcfc, #eef2f1); }
 .agent-live-viewport { width: 100%; height: 100%; display: block; object-fit: contain; background: #f7f8f8; }
+.agent-viewport-coordinate-space { position: absolute; z-index: 31; top: 50%; left: 50%; width: min(100cqw, 142.222cqh); height: min(100cqh, 70.3125cqw); transform: translate(-50%, -50%); pointer-events: none; }
 .screen-nav { height: 52px; padding: 0 26px; display: flex; align-items: center; gap: 20px; border-bottom: 1px solid #e6e9e8; background: white; }
 .screen-nav span { width: 72px; height: 8px; border-radius: 8px; background: #dce1df; }
 .screen-nav span:first-child { width: 38px; margin-right: auto; background: #313b39; }
@@ -175,6 +176,8 @@
 .agent-cursor > i { position: absolute; width: 18px; height: 18px; margin: -5px 0 0 -5px; border: 2px solid white; border-radius: 50%; background: #30c48d; box-shadow: 0 0 0 7px rgba(48,196,141,.2); animation: cursor-pulse 1.15s ease-out infinite; }
 .agent-cursor > span { margin: 19px 0 0 -2px; padding: 4px 7px; color: white; border-radius: 999px; background: rgba(24,32,30,.82); box-shadow: 0 5px 16px rgba(24,32,30,.2); backdrop-filter: blur(7px); font-size: 8px; font-weight: 850; white-space: nowrap; }
 .agent-cursor.is-reported > span { background: rgba(47,143,107,.9); }
+.agent-cursor.is-vision > span { background: rgba(36,105,190,.9); }
+.agent-cursor.is-vision > i { background: #3b82d0; box-shadow: 0 0 0 7px rgba(59,130,208,.2); }
 .agent-cursor.is-estimated > span { background: rgba(112,95,224,.86); }
 .agent-cursor.is-placeholder { opacity: .58; }
 @keyframes cursor-pulse { from { transform: scale(.65); opacity: 1; } to { transform: scale(1.55); opacity: 0; } }

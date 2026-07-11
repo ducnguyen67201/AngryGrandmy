@@ -9,6 +9,8 @@ export type ScreenNarrationRequest = {
 export type ScreenNarrationResult = {
   source: "openai" | "fallback";
   text: string;
+  x?: number;
+  y?: number;
 };
 
 type OpenAIResponse = {
@@ -43,7 +45,7 @@ export async function createScreenNarration(
             role: "system",
             content: [{
               type: "input_text",
-              text: "You are narrating a live usability test. Describe one immediate, natural first-person thought grounded only in the screenshot. Stay in persona, mention the visible UI that caused the reaction, use 8-24 words, and return only the spoken sentence.",
+              text: "You are narrating a live usability test. Identify the single visible UI element the persona is currently considering, then describe one immediate first-person thought grounded only in the screenshot. Return JSON with text (8-24 spoken words), x, and y. x/y are the element center as percentages of the full screenshot from 0 to 100. If no specific element is relevant, omit x/y.",
             }],
           },
           {
@@ -57,19 +59,47 @@ export async function createScreenNarration(
             ],
           },
         ],
+        text: { format: { type: "json_object" } },
         max_output_tokens: 80,
       }),
       signal: AbortSignal.timeout(25_000),
     });
     if (!response.ok) return { source: "fallback", text: FALLBACK_THOUGHT };
 
-    const text = readOpenAIText((await response.json()) as OpenAIResponse)?.trim();
-    return text
-      ? { source: "openai", text: text.slice(0, 300) }
-      : { source: "fallback", text: FALLBACK_THOUGHT };
+    const content = readOpenAIText((await response.json()) as OpenAIResponse)?.trim();
+    if (!content) return { source: "fallback", text: FALLBACK_THOUGHT };
+    const parsed = parseNarrationContent(content);
+    if (!parsed) return { source: "openai", text: content.slice(0, 300) };
+    return {
+      source: "openai",
+      text: parsed.text.slice(0, 300),
+      ...(validPercent(parsed.x) && validPercent(parsed.y)
+        ? { x: parsed.x, y: parsed.y }
+        : {}),
+    };
   } catch {
     return { source: "fallback", text: FALLBACK_THOUGHT };
   }
+}
+
+function parseNarrationContent(
+  content: string,
+): { text: string; x?: number; y?: number } | null {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    if (typeof parsed.text !== "string" || !parsed.text.trim()) return null;
+    return {
+      text: parsed.text.trim(),
+      ...(typeof parsed.x === "number" ? { x: parsed.x } : {}),
+      ...(typeof parsed.y === "number" ? { y: parsed.y } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function validPercent(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
 }
 
 function readOpenAIText(json: OpenAIResponse): string | null {

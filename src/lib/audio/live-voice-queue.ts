@@ -73,22 +73,25 @@ export function getScreenNarrationCandidate({
   processedEventIds: ReadonlySet<string>;
 }): ScreenNarrationEvent | null {
   if (!enabled || !selectedPersonaId) return null;
-  if (events.some(
-    (event) =>
-      event.personaId === selectedPersonaId &&
-      event.type === "narration" &&
-      Boolean(event.text?.trim()),
-  )) {
-    return null;
-  }
-
-  return [...events].reverse().find(
+  const candidate = [...events].reverse().find(
     (event) =>
       event.personaId === selectedPersonaId &&
       event.type === "viewport" &&
       Boolean(event.imageUrl) &&
       !processedEventIds.has(event.id),
   ) ?? null;
+  if (!candidate) return null;
+
+  if (events.some(
+    (event) =>
+      event.personaId === selectedPersonaId &&
+      event.type === "narration" &&
+      event.cursor === candidate.cursor &&
+      Boolean(event.text?.trim()),
+  )) {
+    return null;
+  }
+  return candidate;
 }
 
 export function getReplayNarrationsForFrame({
