@@ -56,9 +56,45 @@ const TERMINAL_STATUSES = new Set<NormalizedSession["status"]>([
   "failed",
 ]);
 
+const DEMO_PRESETS = [
+  {
+    id: "healthcare",
+    label: "Healthcare",
+    url: "https://www.zocdoc.com",
+    objective:
+      "Find and start booking a routine doctor appointment, stopping before submitting real patient data.",
+  },
+  {
+    id: "checkout",
+    label: "Checkout",
+    url: "https://demo.vercel.store",
+    objective:
+      "Find a product and reach checkout review, stopping before payment or order placement.",
+  },
+  {
+    id: "booking",
+    label: "Booking",
+    url: "https://www.opentable.com",
+    objective:
+      "Find a restaurant reservation path, stopping before confirming a real reservation.",
+  },
+  {
+    id: "saas",
+    label: "SaaS Signup",
+    url: "https://linear.app",
+    objective:
+      "Understand the product and find the signup or demo path, stopping before creating a real workspace.",
+  },
+] as const;
+
+const DEFAULT_OBJECTIVE =
+  "Find the primary user workflow and stop before an irreversible action.";
+
 export default function Home() {
   const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createDemoRun());
   const [targetUrl, setTargetUrl] = useState("https://demo-health.example");
+  const [objective, setObjective] = useState(DEFAULT_OBJECTIVE);
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [authorized, setAuthorized] = useState(true);
   const [loading, setLoading] = useState(false);
   const [dispatching, setDispatching] = useState(false);
@@ -289,7 +325,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: targetUrl,
-          objective: "Find the primary user workflow and stop before an irreversible action.",
+          objective,
           authorizationConfirmed: authorized,
         }),
       });
@@ -305,7 +341,7 @@ export default function Home() {
         id: `plan-${Date.now()}`,
         phase: "revealing",
         url: targetUrl,
-        objective: "Find the primary user workflow and stop before an irreversible action.",
+        objective,
         analysis: payload.data?.analysis ?? current.analysis,
         sessions: [],
         selectedPersonaId: payload.data?.analysis?.personas[0]?.id ?? null,
@@ -334,7 +370,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: targetUrl,
-          objective: "Find the primary user workflow and stop before an irreversible action.",
+          objective,
           authorizationConfirmed: authorized,
         }),
       });
@@ -465,6 +501,30 @@ export default function Home() {
             className="grid gap-3 rounded-lg border border-ink/12 bg-white/72 p-4 shadow-sm backdrop-blur"
             onSubmit={handlePlan}
           >
+            <div>
+              <p className="text-sm font-bold">Demo presets</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {DEMO_PRESETS.map((preset) => (
+                  <button
+                    className={`rounded-md border px-3 py-2 text-left text-sm font-black transition ${
+                      selectedPresetId === preset.id
+                        ? "border-ink bg-ink text-paper"
+                        : "border-ink/12 bg-white text-ink hover:border-ink/30"
+                    }`}
+                    key={preset.id}
+                    onClick={() => {
+                      setSelectedPresetId(preset.id);
+                      setTargetUrl(preset.url);
+                      setObjective(preset.objective);
+                      setStatusLine(`${preset.label} preset loaded. Generate the panel when ready.`);
+                    }}
+                    type="button"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <label className="text-sm font-bold" htmlFor="target-url">
               Authorized site URL
             </label>
@@ -485,6 +545,18 @@ export default function Home() {
                 {loading ? "Planning..." : "Generate Panel"}
               </button>
             </div>
+            <label className="text-sm font-bold" htmlFor="objective">
+              Test objective
+            </label>
+            <textarea
+              className="min-h-24 rounded-md border border-ink/18 bg-white px-4 py-3 text-base leading-6"
+              id="objective"
+              onChange={(event) => {
+                setObjective(event.target.value);
+                setSelectedPresetId(null);
+              }}
+              value={objective}
+            />
             <button
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md border border-ink/18 bg-white px-5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-55"
               disabled={loading || dispatching || !authorized || !snapshot.analysis}
