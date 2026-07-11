@@ -4,6 +4,10 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
+  buildVisualHotspots,
+  type VisualHotspot,
+} from "@/lib/hotspots/build-hotspots";
+import {
   buildJudgeSummary,
   buildMarkdownReport,
   buildReportJson,
@@ -128,6 +132,21 @@ export default function Home() {
   const report = snapshot.report;
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
+  );
+  const visualHotspots = useMemo(
+    () => buildVisualHotspots(snapshot.sessions),
+    [snapshot.sessions],
+  );
+  const hotspotCounts = useMemo(
+    () =>
+      visualHotspots.reduce(
+        (counts, hotspot) => ({
+          ...counts,
+          [hotspot.category]: (counts[hotspot.category] ?? 0) + 1,
+        }),
+        {} as Record<string, number>,
+      ),
+    [visualHotspots],
   );
   const selectedSession =
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
@@ -597,6 +616,9 @@ export default function Home() {
             <div className="grid h-full min-h-[520px] grid-cols-2 gap-3 p-4 pt-24">
               {snapshot.analysis?.personas.map((persona) => {
                 const session = sessionsByPersona.get(persona.id);
+                const personaHotspots = visualHotspots.filter(
+                  (hotspot) => hotspot.personaId === persona.id,
+                );
 
                 return (
                 <button
@@ -621,6 +643,16 @@ export default function Home() {
                     <div className="m-2 h-3 rounded bg-mint/70" />
                     <div className="mx-2 mt-3 h-2 rounded bg-white/20" />
                     <div className="mx-2 mt-2 h-2 w-2/3 rounded bg-white/16" />
+                    <HotspotLayer
+                      hotspots={personaHotspots}
+                      onSelect={(hotspot) => {
+                        setSnapshot((current) => ({
+                          ...current,
+                          selectedPersonaId: hotspot.personaId,
+                        }));
+                        setDrawerOpen(true);
+                      }}
+                    />
                   </div>
                   <div className="mx-auto mb-9 h-28 w-24 rounded-t-full bg-[#d9b18f] shadow-lg">
                     <div className="mx-auto h-10 w-16 rounded-b-full bg-white/75" />
@@ -696,8 +728,10 @@ export default function Home() {
         </div>
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <Sparkles className="mb-4 text-grape" />
-          <p className="text-3xl font-black">{report?.sharedHotspots.length ?? 0} hotspots</p>
-          <p className="mt-2 text-sm text-ink/66">Shared confusion clustered across personas.</p>
+          <p className="text-3xl font-black">{visualHotspots.length} hotspots</p>
+          <p className="mt-2 text-sm text-ink/66">
+            {hotspotSummary(hotspotCounts)}
+          </p>
         </div>
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <ExternalLink className="mb-4 text-tomato" />
@@ -943,6 +977,40 @@ function MetricTile({ label, value }: { label: string; value: string }) {
   );
 }
 
+function HotspotLayer({
+  hotspots,
+  onSelect,
+}: {
+  hotspots: VisualHotspot[];
+  onSelect: (hotspot: VisualHotspot) => void;
+}) {
+  if (hotspots.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0">
+      {hotspots.slice(0, 4).map((hotspot) => (
+        <button
+          aria-label={`${hotspot.category} hotspot: ${hotspot.evidence}`}
+          className={`absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/80 text-[10px] font-black text-white shadow-lg ${hotspotClass(
+            hotspot.severity,
+          )}`}
+          key={hotspot.id}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(hotspot);
+          }}
+          style={{ left: `${hotspot.x}%`, top: `${hotspot.y}%` }}
+          title={`${hotspot.label}: ${hotspot.recommendation}`}
+          type="button"
+        >
+          <span className="absolute inset-0 animate-ping rounded-full bg-current opacity-35" />
+          <span className="relative">{hotspot.severity}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function markResultFailure(session: NormalizedSession): NormalizedSession {
   return {
     ...session,
@@ -971,6 +1039,21 @@ function stationClass(state: VisualAgentState): string {
 
 function variantClass(variant: number): string {
   return ["bg-grape", "bg-mint", "bg-brass", "bg-tomato"][variant] ?? "bg-grape";
+}
+
+function hotspotClass(severity: number): string {
+  if (severity >= 4) return "bg-tomato text-tomato";
+  if (severity === 3) return "bg-brass text-brass";
+  return "bg-mint text-mint";
+}
+
+function hotspotSummary(counts: Record<string, number>): string {
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return "Friction heatmap appears as findings arrive.";
+  return entries
+    .slice(0, 3)
+    .map(([category, count]) => `${count} ${category}`)
+    .join(" · ");
 }
 
 function scoreImpactLabel(session?: NormalizedSession): string {
