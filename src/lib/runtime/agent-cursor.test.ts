@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRuntimeEvent } from "./agent-events";
-import { buildDemoCursorFallback, getAgentCursorForFrame } from "./agent-cursor";
+import {
+  buildAnimatedCursorFallback,
+  buildDemoCursorFallback,
+  getAgentCursorForFrame,
+} from "./agent-cursor";
 
 function event(
   id: string,
@@ -69,6 +73,21 @@ describe("agent cursor replay", () => {
       expect(point.x).toBeLessThanOrEqual(88);
       expect(point.y).toBeGreaterThanOrEqual(16);
       expect(point.y).toBeLessThanOrEqual(82);
+    }
+  });
+
+  it("keeps an estimated live cursor moving between H screenshot updates", () => {
+    const points = Array.from({ length: 12 }, (_, tick) =>
+      buildAnimatedCursorFallback(5, 6, tick),
+    );
+
+    expect(new Set(points.map(({ x, y }) => `${x}:${y}`)).size).toBeGreaterThan(8);
+    for (const point of points) {
+      expect(point.id).toContain("live-cursor-5-");
+      expect(point.x).toBeGreaterThanOrEqual(8);
+      expect(point.x).toBeLessThanOrEqual(92);
+      expect(point.y).toBeGreaterThanOrEqual(10);
+      expect(point.y).toBeLessThanOrEqual(88);
     }
   });
 });
