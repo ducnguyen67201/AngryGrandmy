@@ -108,4 +108,35 @@ describe("GET /api/h-frame", () => {
     expect(response.status).toBe(502);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects non-image and oversized provider responses", async () => {
+    process.env.HAI_API_KEY = "test-key";
+    const requestUrl =
+      `http://localhost/api/h-frame?sessionId=${sessionId}&source=${encodeURIComponent(source)}`;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(
+        new Response("not an image", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    expect(await GET(new NextRequest(requestUrl))).toMatchObject({ status: 502 });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(
+        new Response(new Uint8Array([1]), {
+          status: 200,
+          headers: {
+            "Content-Type": "image/png",
+            "Content-Length": "12000001",
+          },
+        }),
+      ),
+    );
+    expect(await GET(new NextRequest(requestUrl))).toMatchObject({ status: 502 });
+  });
 });
