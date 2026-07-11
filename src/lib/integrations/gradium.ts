@@ -13,6 +13,8 @@ export type VoiceReaction = {
   transcript: string;
 };
 
+const HOLLY_MATURE_CALM_VOICE_ID = "7c5UOKm7AiBgJADg";
+
 export async function createVoiceReaction(
   request: VoiceReactionRequest,
 ): Promise<VoiceReaction> {
@@ -34,10 +36,10 @@ export async function createVoiceReaction(
       },
       body: JSON.stringify({
         text: request.text,
-        voice_id:
-          process.env[`GRADIUM_VOICE_${request.voiceSlot}`] ??
-          process.env.GRADIUM_VOICE_ID ??
-          "YTpq7expH9539ERJ",
+        voice_id: [
+          process.env[`GRADIUM_VOICE_${request.voiceSlot}`],
+          process.env.GRADIUM_VOICE_ID,
+        ].find((voiceId) => voiceId?.trim()) ?? HOLLY_MATURE_CALM_VOICE_ID,
         output_format: process.env.GRADIUM_OUTPUT_FORMAT ?? "wav",
         only_audio: true,
       }),

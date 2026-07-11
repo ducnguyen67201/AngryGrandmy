@@ -7,6 +7,7 @@ import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import {
   enqueueLiveVoiceItem,
+  getReplayNarrationsForFrame,
   isLiveNarrationEligible,
   type LiveVoiceQueueItem,
 } from "@/lib/audio/live-voice-queue";
@@ -181,9 +182,11 @@ export default function Home() {
   const liveEventCursors = useRef(new Map<string, number>());
   const liveVoiceEnabledRef = useRef(false);
   const liveVoiceQueueRef = useRef<LiveVoiceQueueItem[]>([]);
+  const liveVoiceAudioCacheRef = useRef(new Map<string, LiveVoiceQueueItem>());
   const liveVoiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const liveVoicePlayingRef = useRef(false);
   const spokenLiveEventIds = useRef(new Set<string>());
+  const replaySpokenEventIds = useRef(new Set<string>());
   const sessionsRef = useRef(snapshot.sessions);
   sessionsRef.current = snapshot.sessions;
   const liveMode = snapshot.phase === "running";
@@ -302,6 +305,30 @@ export default function Home() {
     () => getPersonaViewportFrames(liveEvents, selectedPersona?.id),
     [liveEvents, selectedPersona?.id],
   );
+  const replayNarrationEvents = useMemo(() => {
+    const runtimeNarrations = liveEvents.filter(
+      (event) =>
+        event.type === "narration" &&
+        event.personaId === selectedPersona?.id &&
+        Boolean(event.text?.trim()),
+    );
+    if (runtimeNarrations.length > 0) return runtimeNarrations;
+
+    return (selectedSession?.finding?.frictionEvents ?? []).map(
+      (friction, index) => {
+        const matchingFrame =
+          viewportFrames.find((frame) => frame.step >= friction.step) ??
+          viewportFrames.at(-1);
+        return {
+          id: `replay-finding-${selectedSession?.sessionId ?? "session"}-${index}`,
+          personaId: selectedPersona?.id ?? "unknown",
+          type: "narration" as const,
+          cursor: matchingFrame?.cursor ?? friction.step,
+          text: friction.narratedObservation || friction.observation,
+        };
+      },
+    );
+  }, [liveEvents, selectedPersona?.id, selectedSession, viewportFrames]);
   const lastViewportFrameIndex = Math.max(0, viewportFrames.length - 1);
   const activeViewportFrameIndex =
     replayFrameIndex === null
@@ -350,6 +377,40 @@ export default function Home() {
       audio.load();
     }
     if (message) setLiveVoiceLine(message);
+  }, []);
+
+  const synthesizeVoiceItem = useCallback(async ({
+    eventId,
+    personaId,
+    voiceSlot,
+    text,
+  }: {
+    eventId: string;
+    personaId: string;
+    voiceSlot: 0 | 1 | 2 | 3;
+    text: string;
+  }): Promise<LiveVoiceQueueItem | null> => {
+    const cached = liveVoiceAudioCacheRef.current.get(eventId);
+    if (cached) return cached;
+
+    const response = await fetch("/api/voice-reaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ personaId, voiceSlot, text }),
+    });
+    const payload = (await response.json()) as VoiceReactionPayload;
+    const audioSrc = payload.data?.audioBase64
+      ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
+      : payload.data?.audioUrl;
+    if (!response.ok || !audioSrc || !payload.data?.transcript) return null;
+
+    const item = {
+      eventId,
+      audioSrc,
+      transcript: payload.data.transcript,
+    };
+    liveVoiceAudioCacheRef.current.set(eventId, item);
+    return item;
   }, []);
 
   const playNextLiveVoiceItem = useCallback(function playNextLiveVoiceItem() {
@@ -431,6 +492,32 @@ export default function Home() {
       setLiveVoiceLine("Your browser blocked audio. Allow sound, then try again.");
     }
   }, [selectedPersona?.displayName, stopLiveVoicePlayback]);
+
+  const handleReplayToggle = useCallback(async () => {
+    if (replayPlaying) {
+      setReplayPlaying(false);
+      stopLiveVoicePlayback("Replay paused. Live voice remains enabled.");
+      return;
+    }
+
+    if (!liveVoiceEnabledRef.current) {
+      await handleLiveVoiceToggle();
+    }
+    if (!liveVoiceEnabledRef.current) return;
+
+    replaySpokenEventIds.current.clear();
+    stopLiveVoicePlayback("Preparing synchronized replay narration...");
+    if (activeViewportFrameIndex >= viewportFrames.length - 1) {
+      setReplayFrameIndex(0);
+    }
+    setReplayPlaying(true);
+  }, [
+    activeViewportFrameIndex,
+    handleLiveVoiceToggle,
+    replayPlaying,
+    stopLiveVoicePlayback,
+    viewportFrames.length,
+  ]);
   const completedWithFindings = snapshot.sessions.filter(
     (session) => session.finding,
   ).length;
@@ -453,6 +540,7 @@ export default function Home() {
   useEffect(() => {
     setReplayFrameIndex(null);
     setReplayPlaying(false);
+    replaySpokenEventIds.current.clear();
   }, [selectedPersona?.id]);
 
   useEffect(() => {
@@ -467,10 +555,60 @@ export default function Home() {
         }
         return next;
       });
-    }, 1200);
+    }, 3000);
 
     return () => window.clearInterval(timer);
   }, [replayPlaying, viewportFrames.length]);
+
+  useEffect(() => {
+    if (
+      !replayPlaying ||
+      !liveVoiceEnabledRef.current ||
+      !selectedPersona ||
+      !liveViewport
+    ) {
+      return;
+    }
+
+    const previousCursor =
+      activeViewportFrameIndex > 0
+        ? viewportFrames[activeViewportFrameIndex - 1]?.cursor ?? null
+        : null;
+    const narrations = getReplayNarrationsForFrame({
+      events: replayNarrationEvents,
+      personaId: selectedPersona.id,
+      previousCursor,
+      currentCursor: liveViewport.cursor,
+      playedEventIds: replaySpokenEventIds.current,
+    });
+
+    for (const narration of narrations) {
+      replaySpokenEventIds.current.add(narration.id);
+      void synthesizeVoiceItem({
+        eventId: narration.id,
+        personaId: selectedPersona.id,
+        voiceSlot: selectedPersona.voiceSlot,
+        text: narration.text ?? "",
+      })
+        .then((voiceItem) => {
+          if (voiceItem && liveVoiceEnabledRef.current) {
+            queueLiveVoiceItem(voiceItem);
+          }
+        })
+        .catch(() => {
+          setLiveVoiceLine("Replay narration failed. Continuing visual replay...");
+        });
+    }
+  }, [
+    activeViewportFrameIndex,
+    liveViewport,
+    queueLiveVoiceItem,
+    replayNarrationEvents,
+    replayPlaying,
+    selectedPersona,
+    synthesizeVoiceItem,
+    viewportFrames,
+  ]);
 
   useEffect(() => {
     const queryState = parseLabSearchParams(window.location.search);
@@ -695,25 +833,14 @@ export default function Home() {
         })) {
           spokenLiveEventIds.current.add(event.id);
           try {
-            const response = await fetch("/api/voice-reaction", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                personaId: persona.id,
-                voiceSlot: persona.voiceSlot,
-                text: event.text,
-              }),
+            const voiceItem = await synthesizeVoiceItem({
+              eventId: event.id,
+              personaId: persona.id,
+              voiceSlot: persona.voiceSlot,
+              text: event.text ?? "",
             });
-            const payload = (await response.json()) as VoiceReactionPayload;
-            const audioSrc = payload.data?.audioBase64
-              ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
-              : payload.data?.audioUrl;
-            if (response.ok && audioSrc && payload.data?.transcript) {
-              queueLiveVoiceItem({
-                eventId: event.id,
-                audioSrc,
-                transcript: payload.data.transcript,
-              });
+            if (voiceItem) {
+              queueLiveVoiceItem(voiceItem);
             } else {
               setLiveVoiceLine("Gradium did not return audio. Listening for the next thought...");
             }
@@ -765,6 +892,7 @@ export default function Home() {
     snapshot.analysis?.personas,
     snapshot.id,
     snapshot.objective,
+    synthesizeVoiceItem,
     sessionKey,
     snapshot.url,
   ]);
@@ -1018,6 +1146,8 @@ export default function Home() {
     );
     liveEventCursors.current.clear();
     spokenLiveEventIds.current.clear();
+    replaySpokenEventIds.current.clear();
+    liveVoiceAudioCacheRef.current.clear();
     stopLiveVoicePlayback(
       liveVoiceEnabledRef.current
         ? `Listening for ${personasToLaunch[0]?.displayName ?? "the selected persona"}'s first thought...`
@@ -1129,6 +1259,8 @@ export default function Home() {
     lastReportKey.current = null;
     liveEventCursors.current.clear();
     spokenLiveEventIds.current.clear();
+    replaySpokenEventIds.current.clear();
+    liveVoiceAudioCacheRef.current.clear();
     liveVoiceEnabledRef.current = false;
     setLiveVoiceEnabled(false);
     stopLiveVoicePlayback("Enable live voice to hear new agent thoughts.");
@@ -2365,6 +2497,7 @@ export default function Home() {
                       disabled={activeViewportFrameIndex === 0}
                       onClick={() => {
                         setReplayPlaying(false);
+                        stopLiveVoicePlayback("Replay paused. Live voice remains enabled.");
                         setReplayFrameIndex(Math.max(0, activeViewportFrameIndex - 1));
                       }}
                       type="button"
@@ -2374,16 +2507,7 @@ export default function Home() {
                     <button
                       aria-label={replayPlaying ? "Pause run replay" : "Play run replay"}
                       disabled={viewportFrames.length < 2}
-                      onClick={() => {
-                        if (replayPlaying) {
-                          setReplayPlaying(false);
-                          return;
-                        }
-                        if (activeViewportFrameIndex >= viewportFrames.length - 1) {
-                          setReplayFrameIndex(0);
-                        }
-                        setReplayPlaying(true);
-                      }}
+                      onClick={handleReplayToggle}
                       type="button"
                     >
                       {replayPlaying ? <Pause size={14} /> : <Play size={14} />}
@@ -2398,6 +2522,7 @@ export default function Home() {
                       disabled={activeViewportFrameIndex >= viewportFrames.length - 1}
                       onClick={() => {
                         setReplayPlaying(false);
+                        stopLiveVoicePlayback("Replay paused. Live voice remains enabled.");
                         setReplayFrameIndex(Math.min(viewportFrames.length - 1, activeViewportFrameIndex + 1));
                       }}
                       type="button"

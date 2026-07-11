@@ -71,5 +71,13 @@ describe("live persona voice queue", () => {
       currentCursor: 5,
       playedEventIds: new Set(["before"]),
     }).map(({ id }) => id)).toEqual(["at-frame"]);
+
+    expect(getReplayNarrationsForFrame({
+      events: [events[2], events[1]],
+      personaId: "linda",
+      previousCursor: 2,
+      currentCursor: 9,
+      playedEventIds: new Set(),
+    }).map(({ id }) => id)).toEqual(["at-frame", "later"]);
   });
 });

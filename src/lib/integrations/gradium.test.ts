@@ -27,4 +27,37 @@ describe("Gradium persona voice", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(body.voice_id).toBe("7c5UOKm7AiBgJADg");
   });
+
+  it("returns a browser-readable text fallback when Gradium is not configured", async () => {
+    vi.stubEnv("GRADIUM_API_KEY", "");
+
+    const result = await createVoiceReaction({
+      personaId: "linda",
+      voiceSlot: 0,
+      text: "I cannot find the next step.",
+    });
+
+    expect(result).toMatchObject({
+      configured: false,
+      source: "text",
+      transcript: "I cannot find the next step.",
+    });
+  });
+
+  it("falls back safely when the configured Gradium endpoint fails", async () => {
+    vi.stubEnv("GRADIUM_API_KEY", "test-key");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 500 }));
+
+    const result = await createVoiceReaction({
+      personaId: "linda",
+      voiceSlot: 0,
+      text: "This button worries me.",
+    });
+
+    expect(result).toMatchObject({
+      configured: true,
+      source: "text",
+      transcript: "This button worries me.",
+    });
+  });
 });
