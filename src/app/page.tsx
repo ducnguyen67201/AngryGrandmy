@@ -5,6 +5,7 @@ import { Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
   buildVisualHotspots,
+  summarizeHotspots,
   type VisualHotspot,
 } from "@/lib/hotspots/build-hotspots";
 import {
@@ -49,6 +50,16 @@ type VoiceReactionPayload = {
     audioUrl: string | null;
     audioBase64: string | null;
     transcript: string;
+  };
+  error?: { message?: string };
+};
+
+type LocalizeHotspotsPayload = {
+  data?: VisualHotspot[];
+  meta?: {
+    mode?: string;
+    model?: string | null;
+    fallbackReason?: string | null;
   };
   error?: { message?: string };
 };
@@ -105,6 +116,8 @@ export default function Home() {
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
   const [exportLine, setExportLine] = useState("Report package ready.");
+  const [localizedHotspots, setLocalizedHotspots] = useState<VisualHotspot[] | null>(null);
+  const [heatmapLine, setHeatmapLine] = useState("Heatmap uses deterministic placement until findings are localized.");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
@@ -130,23 +143,17 @@ export default function Home() {
     [snapshot.sessions],
   );
   const report = snapshot.report;
+  const fallbackHotspots = useMemo(
+    () => buildVisualHotspots(snapshot.sessions, snapshot.analysis),
+    [snapshot.analysis, snapshot.sessions],
+  );
+  const visualHotspots = localizedHotspots ?? fallbackHotspots;
+  const hotspotCounts = useMemo(
+    () => summarizeHotspots(visualHotspots),
+    [visualHotspots],
+  );
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
-  );
-  const visualHotspots = useMemo(
-    () => buildVisualHotspots(snapshot.sessions),
-    [snapshot.sessions],
-  );
-  const hotspotCounts = useMemo(
-    () =>
-      visualHotspots.reduce(
-        (counts, hotspot) => ({
-          ...counts,
-          [hotspot.category]: (counts[hotspot.category] ?? 0) + 1,
-        }),
-        {} as Record<string, number>,
-      ),
-    [visualHotspots],
   );
   const selectedSession =
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
@@ -169,6 +176,14 @@ export default function Home() {
         ? "finalizing"
         : "pending"
     : "final";
+
+  const hotspotLocalizationKey = useMemo(
+    () =>
+      fallbackHotspots
+        .map((hotspot) => `${hotspot.id}:${hotspot.evidence}:${hotspot.recommendation}`)
+        .join("|"),
+    [fallbackHotspots],
+  );
 
   useEffect(() => {
     if (!liveMode || activeSessions.length === 0) return;
@@ -333,6 +348,58 @@ export default function Home() {
     void scoreRun();
   }, [activeSessions.length, liveMode, snapshot.analysis?.personas, snapshot.sessions]);
 
+  useEffect(() => {
+    if (!hotspotLocalizationKey || fallbackHotspots.length === 0) {
+      setLocalizedHotspots(null);
+      setHeatmapLine("Heatmap will localize once friction evidence exists.");
+      return;
+    }
+
+    let cancelled = false;
+    setLocalizedHotspots(null);
+    setHeatmapLine("Localizing hotspot coordinates with model evidence...");
+
+    async function localize() {
+      try {
+        const response = await fetch("/api/localize-hotspots", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessions: snapshot.sessions,
+            analysis: snapshot.analysis,
+          }),
+        });
+        const payload = (await response.json()) as LocalizeHotspotsPayload;
+
+        if (cancelled) return;
+        if (!response.ok || !payload.data) {
+          throw new Error(payload.error?.message ?? "Hotspot localization failed.");
+        }
+
+        setLocalizedHotspots(payload.data);
+        setHeatmapLine(
+          payload.meta?.mode === "openai"
+            ? `Model-localized heatmap (${payload.meta.model ?? "OpenAI"}).`
+            : `Fallback heatmap${payload.meta?.fallbackReason ? `: ${payload.meta.fallbackReason}` : "."}`,
+        );
+      } catch (error) {
+        if (cancelled) return;
+        setLocalizedHotspots(fallbackHotspots);
+        setHeatmapLine(
+          error instanceof Error
+            ? `Fallback heatmap: ${error.message}`
+            : "Fallback heatmap used.",
+        );
+      }
+    }
+
+    void localize();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackHotspots, hotspotLocalizationKey, snapshot.analysis, snapshot.sessions]);
+
   async function handlePlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -369,6 +436,7 @@ export default function Home() {
         createdAt: now,
         updatedAt: now,
       }));
+      setLocalizedHotspots(null);
       setStatusLine(
         `Generated ${payload.data.analysis.personas.length} personas with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
       );
@@ -401,6 +469,7 @@ export default function Home() {
 
       pendingResultIds.current.clear();
       lastReportKey.current = null;
+      setLocalizedHotspots(null);
       setSnapshot(payload.data);
       setDrawerOpen(false);
       if (payload.meta?.mode === "h-company") {
@@ -487,6 +556,14 @@ export default function Home() {
     const mime = kind === "markdown" ? "text/markdown" : "application/json";
     downloadTextFile(filename, content, mime);
     setExportLine(`${kind === "markdown" ? "Markdown" : "JSON"} report downloaded.`);
+  }
+
+  function handleHotspotSelect(hotspot: VisualHotspot) {
+    setSnapshot((current) => ({
+      ...current,
+      selectedPersonaId: hotspot.personaId,
+    }));
+    setDrawerOpen(true);
   }
 
   return (
@@ -645,13 +722,7 @@ export default function Home() {
                     <div className="mx-2 mt-2 h-2 w-2/3 rounded bg-white/16" />
                     <HotspotLayer
                       hotspots={personaHotspots}
-                      onSelect={(hotspot) => {
-                        setSnapshot((current) => ({
-                          ...current,
-                          selectedPersonaId: hotspot.personaId,
-                        }));
-                        setDrawerOpen(true);
-                      }}
+                      onSelect={handleHotspotSelect}
                     />
                   </div>
                   <div className="mx-auto mb-9 h-28 w-24 rounded-t-full bg-[#d9b18f] shadow-lg">
@@ -731,6 +802,9 @@ export default function Home() {
           <p className="text-3xl font-black">{visualHotspots.length} hotspots</p>
           <p className="mt-2 text-sm text-ink/66">
             {hotspotSummary(hotspotCounts)}
+          </p>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink/40">
+            {heatmapLine}
           </p>
         </div>
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
