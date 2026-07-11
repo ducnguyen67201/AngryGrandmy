@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import Image from "next/image";
 import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, MousePointer2, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
@@ -18,6 +18,7 @@ import {
   type VisualHotspot,
 } from "@/lib/hotspots/build-hotspots";
 import { buildLiveVisualHotspots } from "@/lib/hotspots/build-live-hotspots";
+import { buildHeatmapDensityBlobs } from "@/lib/hotspots/build-heatmap-density";
 import {
   buildJudgeSummary,
   buildMarkdownReport,
@@ -2670,12 +2671,31 @@ function HotspotLayer({
 }) {
   if (hotspots.length === 0) return null;
 
+  const densityBlobs = buildHeatmapDensityBlobs(hotspots);
+
   return (
-    <div className="absolute inset-0 z-20">
-      {hotspots.slice(-6).map((hotspot) => (
+    <>
+      <div aria-hidden="true" className="heatmap-density-layer">
+        {densityBlobs.map((blob) => (
+          <i
+            className="heatmap-density-blob"
+            key={blob.id}
+            style={{
+              "--heatmap-core-opacity": blob.coreOpacity,
+              height: `${blob.radius * 2}%`,
+              left: `${blob.x}%`,
+              opacity: blob.opacity,
+              top: `${blob.y}%`,
+              width: `${blob.radius * 2}%`,
+            } as CSSProperties}
+          />
+        ))}
+      </div>
+      <div className="absolute inset-0 z-20 pointer-events-none">
+        {hotspots.slice(-6).map((hotspot) => (
         <button
           aria-label={`${hotspot.category} hotspot: ${hotspot.evidence}`}
-          className={`absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-2xl transition hover:scale-125 focus:outline-none focus:ring-2 focus:ring-white ${hotspotClass(
+          className={`pointer-events-auto absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-2xl transition hover:scale-125 focus:outline-none focus:ring-2 focus:ring-white ${hotspotClass(
             hotspot.severity,
           )}`}
           key={hotspot.id}
@@ -2697,7 +2717,8 @@ function HotspotLayer({
           <span className="relative">{hotspot.severity}</span>
         </button>
       ))}
-    </div>
+      </div>
+    </>
   );
 }
 
