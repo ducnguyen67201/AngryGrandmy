@@ -7,11 +7,11 @@ import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
-  buildLiveVisualHotspots,
   buildVisualHotspots,
   summarizeHotspots,
   type VisualHotspot,
 } from "@/lib/hotspots/build-hotspots";
+import { buildLiveVisualHotspots } from "@/lib/hotspots/build-live-hotspots";
 import {
   buildJudgeSummary,
   buildMarkdownReport,

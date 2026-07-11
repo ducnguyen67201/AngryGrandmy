@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { demoAnalysis, demoSessions } from "@/lib/fixtures/demo-run";
 import {
-  buildLiveVisualHotspots,
   buildVisualHotspots,
   summarizeHotspots,
 } from "./build-hotspots";
+import { buildLiveVisualHotspots } from "./build-live-hotspots";
 
 describe("buildVisualHotspots", () => {
   it("turns friction events into bounded visual hotspots", () => {
@@ -55,5 +55,30 @@ describe("buildVisualHotspots", () => {
         y: expect.any(Number),
       }),
     ]);
+  });
+
+  it("uses safe labels when live persona metadata or evidence is unavailable", () => {
+    const hotspots = buildLiveVisualHotspots(
+      [
+        {
+          id: "event-unknown",
+          personaId: "custom-persona",
+          step: 0,
+          category: "technical",
+          severity: 2,
+          observation: "The page did not respond.",
+          visibleEvidence: "",
+          recommendation: "Show a recovery action.",
+        },
+      ],
+      null,
+    );
+
+    expect(hotspots[0]).toEqual(
+      expect.objectContaining({
+        personaName: "custom-persona",
+        evidence: "The page did not respond.",
+      }),
+    );
   });
 });
