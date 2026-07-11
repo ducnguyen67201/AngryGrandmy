@@ -30,6 +30,22 @@ export function shouldSpeakCurrentNarrationOnEnable({
   return Boolean(runComplete && selectedPersonaId && narration?.trim());
 }
 
+export function shouldPrimeReplayNarration({
+  enabled,
+  frameCount,
+  selectedPersonaId,
+  narration,
+}: {
+  enabled: boolean;
+  frameCount: number;
+  selectedPersonaId: string | null | undefined;
+  narration: string | null | undefined;
+}) {
+  return Boolean(
+    enabled && frameCount > 0 && selectedPersonaId && narration?.trim(),
+  );
+}
+
 export function enqueueLiveVoiceItem(
   queue: readonly LiveVoiceQueueItem[],
   item: LiveVoiceQueueItem,

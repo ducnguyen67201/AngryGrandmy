@@ -13,6 +13,7 @@ import {
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
   shouldSpeakCurrentNarrationOnEnable,
+  shouldPrimeReplayNarration,
   shouldEnableLiveVoiceForDispatch,
   type LiveVoiceQueueItem,
 } from "@/lib/audio/live-voice-queue";
@@ -464,25 +465,34 @@ export default function Home() {
     const cached = liveVoiceAudioCacheRef.current.get(eventId);
     if (cached) return cached;
 
-    const response = await fetch("/api/voice-reaction", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ personaId, voiceSlot, text }),
-    });
-    const payload = (await response.json()) as VoiceReactionPayload;
-    const audioSrc = payload.data?.audioBase64
-      ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
-      : payload.data?.audioUrl;
-    if (!response.ok || !payload.data?.transcript) return null;
-
-    const item = createLiveVoiceQueueItem({
+    const fallback = createLiveVoiceQueueItem({
       eventId,
-      audioSrc: audioSrc ?? null,
-      transcript: payload.data.transcript,
+      audioSrc: null,
+      transcript: text,
     });
-    if (!item) return null;
-    liveVoiceAudioCacheRef.current.set(eventId, item);
-    return item;
+    try {
+      const response = await fetch("/api/voice-reaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personaId, voiceSlot, text }),
+      });
+      const payload = (await response.json()) as VoiceReactionPayload;
+      const audioSrc = payload.data?.audioBase64
+        ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
+        : payload.data?.audioUrl;
+      const item = response.ok && payload.data?.transcript
+        ? createLiveVoiceQueueItem({
+            eventId,
+            audioSrc: audioSrc ?? null,
+            transcript: payload.data.transcript,
+          })
+        : fallback;
+      if (item) liveVoiceAudioCacheRef.current.set(eventId, item);
+      return item;
+    } catch {
+      if (fallback) liveVoiceAudioCacheRef.current.set(eventId, fallback);
+      return fallback;
+    }
   }, []);
 
   const playNextLiveVoiceItem = useCallback(function playNextLiveVoiceItem() {
@@ -496,14 +506,17 @@ export default function Home() {
     }
 
     liveVoicePlayingRef.current = true;
-    setLiveVoiceLine(`Speaking: “${next.transcript}”`);
+    const playbackMode = getLiveVoicePlaybackMode(next);
+    setLiveVoiceLine(
+      `${playbackMode === "browser-speech" ? "Browser speaking" : "Gradium speaking"}: “${next.transcript}”`,
+    );
 
     const finish = () => {
       liveVoicePlayingRef.current = false;
       playNextLiveVoiceItem();
     };
 
-    if (getLiveVoicePlaybackMode(next) === "browser-speech") {
+    if (playbackMode === "browser-speech") {
       if (!("speechSynthesis" in window)) {
         setLiveVoiceLine("No speech engine is available in this browser.");
         finish();
@@ -623,15 +636,33 @@ export default function Home() {
     if (!liveVoiceEnabledRef.current) return;
 
     replaySpokenEventIds.current.clear();
+    screenNarratedEventIds.current.clear();
     stopLiveVoicePlayback("Preparing synchronized replay narration...");
     if (activeViewportFrameIndex >= viewportFrames.length - 1) {
       setReplayFrameIndex(0);
     }
     setReplayPlaying(true);
+    if (shouldPrimeReplayNarration({
+      enabled: liveVoiceEnabledRef.current,
+      frameCount: viewportFrames.length,
+      selectedPersonaId: selectedPersona?.id,
+      narration: selectedNarration,
+    })) {
+      const primer = createLiveVoiceQueueItem({
+        eventId: `replay-primer:${selectedSession?.sessionId ?? selectedPersona?.id ?? "persona"}`,
+        audioSrc: null,
+        transcript: selectedNarration,
+      });
+      if (primer) queueLiveVoiceItem(primer);
+    }
   }, [
     activeViewportFrameIndex,
     handleLiveVoiceToggle,
+    queueLiveVoiceItem,
     replayPlaying,
+    selectedNarration,
+    selectedPersona?.id,
+    selectedSession?.sessionId,
     stopLiveVoicePlayback,
     viewportFrames.length,
   ]);
