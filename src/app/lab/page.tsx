@@ -60,6 +60,7 @@ import {
   type AgentRuntimeEvent,
 } from "@/lib/runtime/agent-events";
 import {
+  buildAnimatedCursorFallback,
   buildDemoCursorFallback,
   getAgentCursorForFrame,
 } from "@/lib/runtime/agent-cursor";
@@ -189,6 +190,7 @@ export default function Home() {
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
   const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
+  const [cursorAnimationTick, setCursorAnimationTick] = useState(0);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
@@ -376,10 +378,17 @@ export default function Home() {
         events: liveEvents,
         personaId: selectedPersona.id,
         frameCursor: eventCursorLimit,
-        fallback: buildDemoCursorFallback(
-          activeViewportFrameIndex,
-          viewportFrames.length,
-        ),
+        fallback:
+          liveMode && replayFrameIndex === null
+            ? buildAnimatedCursorFallback(
+                activeViewportFrameIndex,
+                viewportFrames.length,
+                cursorAnimationTick,
+              )
+            : buildDemoCursorFallback(
+                activeViewportFrameIndex,
+                viewportFrames.length,
+              ),
       })
     : null;
   const liveViewportPresentation = getLiveViewportPresentation({
@@ -572,6 +581,15 @@ export default function Home() {
     setReplayPlaying(false);
     replaySpokenEventIds.current.clear();
   }, [selectedPersona?.id]);
+
+  useEffect(() => {
+    if (!liveMode || replayFrameIndex !== null || viewportFrames.length === 0) return;
+    const timer = window.setInterval(
+      () => setCursorAnimationTick((current) => current + 1),
+      700,
+    );
+    return () => window.clearInterval(timer);
+  }, [liveMode, replayFrameIndex, viewportFrames.length]);
 
   useEffect(() => {
     if (!replayPlaying || viewportFrames.length < 2) return;

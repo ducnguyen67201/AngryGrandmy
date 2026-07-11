@@ -22,6 +22,24 @@ export function buildDemoCursorFallback(
   };
 }
 
+export function buildAnimatedCursorFallback(
+  frameIndex: number,
+  frameCount: number,
+  animationTick: number,
+): { id: string; x: number; y: number } {
+  const safeFrameIndex = Math.max(0, Math.floor(frameIndex));
+  const safeFrameCount = Math.max(1, Math.floor(frameCount));
+  const safeTick = Math.max(0, Math.floor(animationTick));
+  const phase = safeTick * 0.58 + safeFrameIndex * 0.37;
+  const frameBias = (safeFrameIndex % safeFrameCount) / safeFrameCount;
+
+  return {
+    id: `live-cursor-${safeFrameIndex}-${safeTick}`,
+    x: clamp(50 + Math.sin(phase) * 34 + Math.sin(frameBias * Math.PI * 2) * 5, 8, 92),
+    y: clamp(49 + Math.sin(phase * 1.43 + 1.2) * 27, 10, 88),
+  };
+}
+
 export function getAgentCursorForFrame({
   events,
   personaId,
@@ -66,4 +84,8 @@ export function getAgentCursorForFrame({
 
 function validPercent(value: number | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
 }

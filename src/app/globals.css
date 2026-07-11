@@ -170,7 +170,7 @@
 .screen-copy i:first-child { width: 60%; height: 32px; background: #cbd4d1; }
 .screen-copy i:nth-child(3) { width: 70%; }
 .screen-copy button { margin-top: 8px; padding: 12px 22px; color: white; border: 0; border-radius: 8px; background: #416d60; font-size: 11px; font-weight: 800; }
-.agent-cursor { position: absolute; z-index: 32; display: flex; align-items: flex-start; color: #101715; filter: drop-shadow(0 2px 3px rgba(255,255,255,1)); pointer-events: none; transform: translate(-3px, -3px); transition: left .48s cubic-bezier(.2,.8,.2,1), top .48s cubic-bezier(.2,.8,.2,1); }
+.agent-cursor { position: absolute; z-index: 32; display: flex; align-items: flex-start; color: #101715; filter: drop-shadow(0 2px 3px rgba(255,255,255,1)); pointer-events: none; transform: translate(-3px, -3px); transition: left .66s cubic-bezier(.2,.8,.2,1), top .66s cubic-bezier(.2,.8,.2,1); will-change: left, top; }
 .agent-cursor > svg { fill: white; stroke-width: 2.4; transform: rotate(-12deg); }
 .agent-cursor > i { position: absolute; width: 18px; height: 18px; margin: -5px 0 0 -5px; border: 2px solid white; border-radius: 50%; background: #30c48d; box-shadow: 0 0 0 7px rgba(48,196,141,.2); animation: cursor-pulse 1.15s ease-out infinite; }
 .agent-cursor > span { margin: 19px 0 0 -2px; padding: 4px 7px; color: white; border-radius: 999px; background: rgba(24,32,30,.82); box-shadow: 0 5px 16px rgba(24,32,30,.2); backdrop-filter: blur(7px); font-size: 8px; font-weight: 850; white-space: nowrap; }
