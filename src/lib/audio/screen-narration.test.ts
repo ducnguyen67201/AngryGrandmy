@@ -46,4 +46,43 @@ describe("createScreenNarration", () => {
       text: "I’m looking at this page now, but I need a moment to understand what I should do next.",
     });
   });
+
+  it("reads nested Responses API text and falls back on provider errors", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        output: [{ content: [{ text: "This section is dense; where did the main action go?" }] }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("unavailable", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const request = {
+      imageUrl: "data:image/png;base64,frame",
+      personaName: "Linda",
+      personaDescription: "Careful first-time visitor.",
+      objective: "Find the main action.",
+    };
+
+    await expect(createScreenNarration(request)).resolves.toEqual({
+      source: "openai",
+      text: "This section is dense; where did the main action go?",
+    });
+    await expect(createScreenNarration(request)).resolves.toMatchObject({
+      source: "fallback",
+    });
+  });
+
+  it("falls back when a successful response contains no spoken text", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ output: [{ content: [{}] }] }), { status: 200 }),
+    ));
+
+    await expect(createScreenNarration({
+      imageUrl: "data:image/png;base64,frame",
+      personaName: "Linda",
+      personaDescription: "Careful first-time visitor.",
+      objective: "Find the main action.",
+    })).resolves.toMatchObject({ source: "fallback" });
+  });
 });

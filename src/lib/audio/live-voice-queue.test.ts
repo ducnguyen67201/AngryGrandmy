@@ -4,6 +4,7 @@ import {
   getScreenNarrationCandidate,
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
+  shouldEnableLiveVoiceForDispatch,
   type LiveVoiceQueueItem,
 } from "./live-voice-queue";
 
@@ -107,5 +108,29 @@ describe("live persona voice queue", () => {
       selectedPersonaId: "linda",
       processedEventIds: new Set(),
     })).toBeNull();
+  });
+
+  it("does not inspect frames until live voice is enabled for a persona", () => {
+    const events = [
+      { id: "frame", personaId: "linda", type: "viewport", cursor: 2, imageUrl: "data:image/png;base64,one" },
+    ];
+
+    expect(getScreenNarrationCandidate({
+      enabled: false,
+      events,
+      selectedPersonaId: "linda",
+      processedEventIds: new Set(),
+    })).toBeNull();
+    expect(getScreenNarrationCandidate({
+      enabled: true,
+      events,
+      selectedPersonaId: null,
+      processedEventIds: new Set(),
+    })).toBeNull();
+  });
+
+  it("unlocks live voice from the dispatch gesture unless it is already on", () => {
+    expect(shouldEnableLiveVoiceForDispatch(false)).toBe(true);
+    expect(shouldEnableLiveVoiceForDispatch(true)).toBe(false);
   });
 });
