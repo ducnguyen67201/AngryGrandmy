@@ -14,12 +14,20 @@ import {
   buildMarkdownReport,
   buildReportJson,
 } from "@/lib/report/export-report";
+import {
+  buildPersistedLabState,
+  parsePersistedLabState,
+  PERSISTED_LAB_STATE_KEY,
+} from "@/lib/persistence/lab-state";
 import type {
   NormalizedSession,
   RunSnapshot,
   UsabilityReport,
   VisualAgentState,
 } from "@/lib/schemas/run";
+import { getPanelFeedback } from "@/lib/ui/panel-feedback";
+import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
+import { getRunGuidance } from "@/lib/ui/run-guidance";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -121,12 +129,16 @@ export default function Home() {
   const [localizedHotspots, setLocalizedHotspots] = useState<VisualHotspot[] | null>(null);
   const [heatmapLine, setHeatmapLine] = useState("Heatmap uses deterministic placement until findings are localized.");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [persistenceLine, setPersistenceLine] = useState("Restoring any saved lab run...");
+  const [persistenceHydrated, setPersistenceHydrated] = useState(false);
+  const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
   const pendingResultIds = useRef(new Set<string>());
   const lastReportKey = useRef<string | null>(null);
   const liveMode = snapshot.phase === "running";
+  const panelFeedback = getPanelFeedback({ snapshot, loading, dispatching });
   const activeSessions = useMemo(
     () =>
       snapshot.sessions.filter(
@@ -154,6 +166,12 @@ export default function Home() {
     () => summarizeHotspots(visualHotspots),
     [visualHotspots],
   );
+  const heatmapDisplay = getHeatmapDisplay({
+    hotspotCount: visualHotspots.length,
+    heatmapLine,
+    liveMode,
+  });
+  const runGuidance = getRunGuidance({ snapshot, loading, dispatching });
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
   );
@@ -186,6 +204,60 @@ export default function Home() {
         .join("|"),
     [fallbackHotspots],
   );
+
+  useEffect(() => {
+    const saved = parsePersistedLabState(
+      window.localStorage.getItem(PERSISTED_LAB_STATE_KEY),
+    );
+
+    if (saved) {
+      setSnapshot(saved.snapshot);
+      setTargetUrl(saved.targetUrl);
+      setObjective(saved.objective);
+      setSelectedPresetId(saved.selectedPresetId);
+      setAuthorized(saved.authorized);
+      setStatusLine(saved.statusLine);
+      setPersistenceLine(`Restored saved run from ${new Date(saved.savedAt).toLocaleTimeString()}.`);
+      setHasRestoredSavedRun(true);
+    } else {
+      setPersistenceLine("Autosave ready.");
+    }
+
+    setPersistenceHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!persistenceHydrated) return;
+
+    try {
+      const persisted = buildPersistedLabState({
+        snapshot,
+        targetUrl,
+        objective,
+        selectedPresetId,
+        authorized,
+        statusLine,
+      });
+      window.localStorage.setItem(
+        PERSISTED_LAB_STATE_KEY,
+        JSON.stringify(persisted),
+      );
+      setPersistenceLine(
+        `${hasRestoredSavedRun ? "Restored run" : "Run"} autosaved ${new Date(persisted.savedAt).toLocaleTimeString()}.`,
+      );
+    } catch {
+      setPersistenceLine("Autosave paused until the URL is valid.");
+    }
+  }, [
+    authorized,
+    hasRestoredSavedRun,
+    objective,
+    persistenceHydrated,
+    selectedPresetId,
+    snapshot,
+    statusLine,
+    targetUrl,
+  ]);
 
   useEffect(() => {
     if (!liveMode || activeSessions.length === 0) return;
@@ -637,6 +709,51 @@ export default function Home() {
       </section>
 
     <main className="lab-shell min-h-screen bg-paper px-5 py-16 text-ink md:px-8" id="lab">
+      <section className="mx-auto mb-6 max-w-7xl rounded-lg border border-ink/12 bg-white/72 p-4 shadow-sm md:p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-ink/42">
+              Test workflow
+            </p>
+            <h2 className="mt-1 text-2xl font-black">Website to decision, in one run</h2>
+          </div>
+          <p className="text-sm font-semibold text-ink/55">
+            Active: {runGuidance.steps.find((step) => step.id === runGuidance.activeStep)?.label}
+          </p>
+        </div>
+        <ol className="mt-5 grid gap-2 md:grid-cols-5" aria-label="Usability test workflow">
+          {runGuidance.steps.map((step, index) => (
+            <li
+              aria-current={step.status === "active" ? "step" : undefined}
+              className={`rounded-md border p-3 transition ${
+                step.status === "active"
+                  ? "border-mint bg-mint/12 shadow-[0_10px_26px_rgba(98,196,155,0.16)]"
+                  : step.status === "complete"
+                    ? "border-ink/10 bg-ink/[0.035]"
+                    : "border-ink/8 bg-white/50 opacity-60"
+              }`}
+              key={step.id}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`grid h-6 w-6 place-items-center rounded-full text-xs font-black ${
+                    step.status === "active"
+                      ? "bg-mint text-ink"
+                      : step.status === "complete"
+                        ? "bg-ink text-paper"
+                        : "bg-ink/8 text-ink/45"
+                  }`}
+                >
+                  {step.status === "complete" ? "✓" : index + 1}
+                </span>
+                <p className="text-sm font-black">{step.label}</p>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-ink/55">{step.description}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.92fr_1.08fr]">
         <div className="flex flex-col gap-6">
           <div>
@@ -722,14 +839,66 @@ export default function Home() {
               }}
               value={objective}
             />
+            <section
+              aria-live="polite"
+              className={`rounded-lg border p-4 shadow-sm ${
+                panelFeedback.tone === "ready"
+                  ? "border-mint/45 bg-mint/12"
+                  : panelFeedback.tone === "planning" || panelFeedback.tone === "dispatching"
+                    ? "border-brass/45 bg-brass/12"
+                    : panelFeedback.tone === "running"
+                      ? "border-blue-400/40 bg-blue-100/45"
+                      : panelFeedback.tone === "complete"
+                        ? "border-ink/12 bg-white"
+                        : "border-ink/10 bg-white/56"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-ink/45">
+                    Next step
+                  </p>
+                  <h3 className="mt-1 text-xl font-black">{panelFeedback.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-ink/68">
+                    {panelFeedback.description}
+                  </p>
+                </div>
+                <Sparkles
+                  className={
+                    panelFeedback.tone === "ready"
+                      ? "text-mint"
+                      : panelFeedback.tone === "planning" || panelFeedback.tone === "dispatching"
+                        ? "animate-pulse text-brass"
+                        : "text-ink/30"
+                  }
+                  size={24}
+                />
+              </div>
+              {panelFeedback.personaNames.length > 0 ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {panelFeedback.personaNames.map((name) => (
+                    <span
+                      className="rounded-full border border-ink/10 bg-white px-3 py-1 text-xs font-black text-ink/70"
+                      key={name}
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </section>
             <button
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md border border-ink/18 bg-white px-5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-55"
+              className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-md border px-5 font-bold transition disabled:cursor-not-allowed disabled:opacity-55 ${
+                panelFeedback.tone === "ready"
+                  ? "border-mint bg-mint text-ink shadow-[0_12px_28px_rgba(98,196,155,0.22)] hover:-translate-y-0.5"
+                  : "border-ink/18 bg-white text-ink"
+              }`}
               disabled={loading || dispatching || !authorized || !snapshot.analysis}
               onClick={handleLaunch}
               type="button"
             >
               <Play size={18} />
-              {dispatching ? "Dispatching..." : "Dispatch Grandmas"}
+              {panelFeedback.dispatchLabel}
             </button>
             <label className="inline-flex items-start gap-3 text-sm leading-6 text-ink/70">
               <input
@@ -743,6 +912,9 @@ export default function Home() {
             </label>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">
               {statusLine}
+            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mint/75">
+              {persistenceLine}
             </p>
           </form>
         </div>
@@ -758,8 +930,27 @@ export default function Home() {
                 {liveMode ? "Live H Mode" : "Demo Mode"}
               </div>
             </div>
+            <div className="absolute left-5 right-5 top-20 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/12 bg-black/45 px-4 py-3 shadow-2xl backdrop-blur">
+              <div>
+                <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-mint">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-mint shadow-[0_0_18px_rgba(98,196,155,0.9)]" />
+                  {heatmapDisplay.label}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-paper/70">
+                  {heatmapDisplay.hint}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.14em]">
+                <span className="rounded-full bg-tomato px-3 py-1 text-white shadow-[0_0_22px_rgba(229,88,72,0.55)]">
+                  {heatmapDisplay.countLabel}
+                </span>
+                <span className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-paper/70">
+                  {heatmapDisplay.sourceLabel}
+                </span>
+              </div>
+            </div>
 
-            <div className="grid h-full min-h-[520px] grid-cols-2 gap-3 p-4 pt-24">
+            <div className="grid h-full min-h-[560px] grid-cols-2 gap-3 p-4 pt-40">
               {snapshot.analysis?.personas.map((persona) => {
                 const session = sessionsByPersona.get(persona.id);
                 const personaHotspots = visualHotspots.filter(
@@ -789,6 +980,11 @@ export default function Home() {
                     <div className="m-2 h-3 rounded bg-mint/70" />
                     <div className="mx-2 mt-3 h-2 rounded bg-white/20" />
                     <div className="mx-2 mt-2 h-2 w-2/3 rounded bg-white/16" />
+                    {personaHotspots.length > 0 ? (
+                      <div className="absolute -bottom-6 left-0 rounded bg-black/70 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-mint">
+                        Heatmap
+                      </div>
+                    ) : null}
                     <HotspotLayer
                       hotspots={personaHotspots}
                       onSelect={handleHotspotSelect}
@@ -871,6 +1067,9 @@ export default function Home() {
           <p className="text-3xl font-black">{visualHotspots.length} hotspots</p>
           <p className="mt-2 text-sm text-ink/66">
             {hotspotSummary(hotspotCounts)}
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink/70">
+            Look in the Live Lab: the glowing numbered markers are the heatmap.
           </p>
           <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink/40">
             {heatmapLine}
@@ -965,6 +1164,29 @@ export default function Home() {
                 <p className="text-sm leading-6 text-ink/72">{recommendation}</p>
               </div>
             ))}
+          </div>
+        </article>
+
+        <article className="rounded-lg border border-mint/45 bg-mint/10 p-5 lg:col-span-2">
+          <div className="grid gap-5 lg:grid-cols-[0.68fr_1.32fr] lg:items-start">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.16em] text-mint/90">
+                {runGuidance.nextAction.eyebrow}
+              </p>
+              <h3 className="mt-2 text-3xl font-black">{runGuidance.nextAction.title}</h3>
+              <p className="mt-3 text-sm leading-6 text-ink/68">
+                {runGuidance.nextAction.detail}
+              </p>
+            </div>
+            <div className="rounded-md border border-ink/10 bg-white/80 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-ink/40">
+                Highest-impact move
+              </p>
+              <p className="mt-2 text-base font-bold leading-7 text-ink/78">
+                {runGuidance.nextAction.recommendation ??
+                  "Complete the current step to unlock an evidence-backed recommendation."}
+              </p>
+            </div>
           </div>
         </article>
       </section>
@@ -1135,11 +1357,11 @@ function HotspotLayer({
   if (hotspots.length === 0) return null;
 
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0 z-20">
       {hotspots.slice(0, 4).map((hotspot) => (
         <button
           aria-label={`${hotspot.category} hotspot: ${hotspot.evidence}`}
-          className={`absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/80 text-[10px] font-black text-white shadow-lg ${hotspotClass(
+          className={`absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-2xl transition hover:scale-125 focus:outline-none focus:ring-2 focus:ring-white ${hotspotClass(
             hotspot.severity,
           )}`}
           key={hotspot.id}
@@ -1151,7 +1373,8 @@ function HotspotLayer({
           title={`${hotspot.label}: ${hotspot.recommendation}`}
           type="button"
         >
-          <span className="absolute inset-0 animate-ping rounded-full bg-current opacity-35" />
+          <span className="absolute -inset-2 animate-ping rounded-full bg-white/35" />
+          <span className="absolute -inset-1 rounded-full border border-white/45" />
           <span className="relative">{hotspot.severity}</span>
         </button>
       ))}
@@ -1190,9 +1413,9 @@ function variantClass(variant: number): string {
 }
 
 function hotspotClass(severity: number): string {
-  if (severity >= 4) return "bg-tomato text-tomato";
-  if (severity === 3) return "bg-brass text-brass";
-  return "bg-mint text-mint";
+  if (severity >= 4) return "bg-tomato shadow-[0_0_34px_rgba(229,88,72,0.85)]";
+  if (severity === 3) return "bg-brass shadow-[0_0_30px_rgba(191,131,45,0.8)]";
+  return "bg-mint shadow-[0_0_28px_rgba(98,196,155,0.78)]";
 }
 
 function hotspotSummary(counts: Record<string, number>): string {
