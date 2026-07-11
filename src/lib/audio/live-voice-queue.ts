@@ -50,6 +50,43 @@ export type ReplayNarrationEvent = {
   text?: string;
 };
 
+export type ScreenNarrationEvent = ReplayNarrationEvent & {
+  imageUrl?: string;
+  sessionId?: string;
+  step?: number;
+  currentUrl?: string;
+};
+
+export function getScreenNarrationCandidate({
+  enabled,
+  events,
+  selectedPersonaId,
+  processedEventIds,
+}: {
+  enabled: boolean;
+  events: readonly ScreenNarrationEvent[];
+  selectedPersonaId: string | null | undefined;
+  processedEventIds: ReadonlySet<string>;
+}): ScreenNarrationEvent | null {
+  if (!enabled || !selectedPersonaId) return null;
+  if (events.some(
+    (event) =>
+      event.personaId === selectedPersonaId &&
+      event.type === "narration" &&
+      Boolean(event.text?.trim()),
+  )) {
+    return null;
+  }
+
+  return [...events].reverse().find(
+    (event) =>
+      event.personaId === selectedPersonaId &&
+      event.type === "viewport" &&
+      Boolean(event.imageUrl) &&
+      !processedEventIds.has(event.id),
+  ) ?? null;
+}
+
 export function getReplayNarrationsForFrame({
   events,
   personaId,

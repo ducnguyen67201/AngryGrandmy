@@ -7,6 +7,7 @@ import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import {
   enqueueLiveVoiceItem,
+  getScreenNarrationCandidate,
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
   type LiveVoiceQueueItem,
@@ -94,6 +95,14 @@ type VoiceReactionPayload = {
     audioBase64: string | null;
     audioMime: string | null;
     transcript: string;
+  };
+  error?: { message?: string };
+};
+
+type ScreenNarrationPayload = {
+  data?: {
+    source: "openai" | "fallback";
+    text: string;
   };
   error?: { message?: string };
 };
@@ -191,6 +200,8 @@ export default function Home() {
   const liveVoiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const liveVoicePlayingRef = useRef(false);
   const spokenLiveEventIds = useRef(new Set<string>());
+  const screenNarratedEventIds = useRef(new Set<string>());
+  const lastScreenNarrationAt = useRef(0);
   const replaySpokenEventIds = useRef(new Set<string>());
   const sessionsRef = useRef(snapshot.sessions);
   sessionsRef.current = snapshot.sessions;
@@ -626,6 +637,107 @@ export default function Home() {
     selectedPersona,
     synthesizeVoiceItem,
     viewportFrames,
+  ]);
+
+  useEffect(() => {
+    if (
+      !liveMode ||
+      !liveVoiceEnabled ||
+      replayPlaying ||
+      replayFrameIndex !== null ||
+      !selectedPersona ||
+      !liveViewport?.imageUrl
+    ) {
+      return;
+    }
+
+    const eventsAtCurrentFrame = liveEvents.filter(
+      (event) =>
+        event.id === liveViewport.id ||
+        (event.personaId === selectedPersona.id &&
+          event.type === "narration" &&
+          event.cursor >= liveViewport.cursor),
+    );
+    const candidate = getScreenNarrationCandidate({
+      enabled: liveVoiceEnabledRef.current,
+      events: eventsAtCurrentFrame,
+      selectedPersonaId: selectedPersona.id,
+      processedEventIds: screenNarratedEventIds.current,
+    });
+    if (!candidate?.imageUrl) return;
+
+    const now = Date.now();
+    if (now - lastScreenNarrationAt.current < 6_000) return;
+    lastScreenNarrationAt.current = now;
+    screenNarratedEventIds.current.add(candidate.id);
+    const narrationId = `screen-narration:${candidate.id}`;
+    let cancelled = false;
+
+    setLiveVoiceLine(`Reading what ${selectedPersona.displayName} sees...`);
+    void fetch("/api/screen-narration", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        imageUrl: candidate.imageUrl,
+        personaName: selectedPersona.displayName,
+        personaDescription: `${selectedPersona.tagline}. ${selectedPersona.context}. ${selectedPersona.behaviors.join(" ")}`,
+        objective: snapshot.objective ?? objective,
+        currentUrl: candidate.currentUrl ?? snapshot.url,
+      }),
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as ScreenNarrationPayload;
+        if (!response.ok || !payload.data?.text || cancelled) return null;
+        const narrationEvent: AgentRuntimeEvent = {
+          id: narrationId,
+          sessionId: candidate.sessionId ?? selectedSession?.sessionId ?? candidate.id,
+          personaId: selectedPersona.id,
+          cursor: candidate.cursor,
+          step: candidate.step ?? candidate.cursor,
+          createdAt: new Date().toISOString(),
+          type: "narration",
+          text: payload.data.text,
+          emotion: "observing",
+        };
+        const voiceItem = await synthesizeVoiceItem({
+          eventId: narrationId,
+          personaId: selectedPersona.id,
+          voiceSlot: selectedPersona.voiceSlot,
+          text: payload.data.text,
+        });
+        return { narrationEvent, voiceItem };
+      })
+      .then((result) => {
+        if (result && !cancelled && liveVoiceEnabledRef.current) {
+          setLiveEvents((current) =>
+            mergeAgentRuntimeEvents(current, [result.narrationEvent]),
+          );
+          if (result.voiceItem) queueLiveVoiceItem(result.voiceItem);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLiveVoiceLine("Could not narrate this frame. Watching for the next one...");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    liveEvents,
+    liveMode,
+    liveVoiceEnabled,
+    liveViewport,
+    objective,
+    queueLiveVoiceItem,
+    replayFrameIndex,
+    replayPlaying,
+    selectedPersona,
+    selectedSession?.sessionId,
+    snapshot.objective,
+    snapshot.url,
+    synthesizeVoiceItem,
   ]);
 
   useEffect(() => {
@@ -1164,6 +1276,8 @@ export default function Home() {
     );
     liveEventCursors.current.clear();
     spokenLiveEventIds.current.clear();
+    screenNarratedEventIds.current.clear();
+    lastScreenNarrationAt.current = 0;
     replaySpokenEventIds.current.clear();
     liveVoiceAudioCacheRef.current.clear();
     stopLiveVoicePlayback(
@@ -1277,6 +1391,8 @@ export default function Home() {
     lastReportKey.current = null;
     liveEventCursors.current.clear();
     spokenLiveEventIds.current.clear();
+    screenNarratedEventIds.current.clear();
+    lastScreenNarrationAt.current = 0;
     replaySpokenEventIds.current.clear();
     liveVoiceAudioCacheRef.current.clear();
     liveVoiceEnabledRef.current = false;
