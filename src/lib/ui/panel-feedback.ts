@@ -20,13 +20,16 @@ export function getPanelFeedback({
   snapshot,
   loading,
   dispatching,
+  testerCount,
 }: {
   snapshot: RunSnapshot;
   loading: boolean;
   dispatching: boolean;
+  testerCount?: number;
 }): PanelFeedback {
   const personaNames =
     snapshot.analysis?.personas.map((persona) => persona.displayName) ?? [];
+  const targetCount = testerCount ?? personaNames.length;
 
   if (loading) {
     return {
@@ -42,7 +45,7 @@ export function getPanelFeedback({
     return {
       tone: "dispatching",
       title: "Dispatching grandmas",
-      description: "Starting H Company computer-use sessions for every persona.",
+      description: `Starting ${targetCount} H Company computer-use session${targetCount === 1 ? "" : "s"}.`,
       personaNames,
       dispatchLabel: "Dispatching...",
     };
@@ -52,9 +55,9 @@ export function getPanelFeedback({
     return {
       tone: "ready",
       title: "Panel ready",
-      description: `Review the ${personaNames.length} generated personas, then dispatch them into the product.`,
+      description: `Review the ${personaNames.length} generated personas, then dispatch ${targetCount} into the product.`,
       personaNames,
-      dispatchLabel: `Dispatch ${personaNames.length} Grandmas`,
+      dispatchLabel: `Dispatch ${targetCount} Grandma${targetCount === 1 ? "" : "s"}`,
     };
   }
 
@@ -74,7 +77,7 @@ export function getPanelFeedback({
       title: "Report ready",
       description: "Evidence has been scored into a Human-Friendly report.",
       personaNames,
-      dispatchLabel: `Dispatch ${Math.max(personaNames.length, 4)} Grandmas`,
+      dispatchLabel: `Dispatch ${targetCount} Grandma${targetCount === 1 ? "" : "s"}`,
     };
   }
 

@@ -15,13 +15,15 @@ describe("panel feedback", () => {
       snapshot,
       loading: false,
       dispatching: false,
+      testerCount: 2,
     });
 
     expect(feedback.tone).toBe("ready");
     expect(feedback.title).toBe("Panel ready");
     expect(feedback.description).toContain("Review the 4 generated personas");
+    expect(feedback.description).toContain("dispatch 2");
     expect(feedback.personaNames).toEqual(["Linda", "Rosa", "Mei", "Joan"]);
-    expect(feedback.dispatchLabel).toBe("Dispatch 4 Grandmas");
+    expect(feedback.dispatchLabel).toBe("Dispatch 2 Grandmas");
   });
 
   it("shows an active planning state while generation is running", () => {

@@ -6,6 +6,10 @@ import {
   isHCompanyConfigured,
 } from "@/lib/integrations/h-company";
 import { buildProductAnalysisPlan } from "@/lib/product/analyze-product";
+import {
+  getTesterCountFromRequest,
+  limitPersonasForTesterCount,
+} from "@/lib/run/tester-count";
 import type { NormalizedSession } from "@/lib/schemas/run";
 import { ProductAnalysisSchema } from "@/lib/schemas/run";
 import { validateAnalyzeRequest } from "@/lib/security/url-policy";
@@ -15,7 +19,9 @@ export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
-    const request = validateAnalyzeRequest(await req.json());
+    const raw = await req.json();
+    const request = validateAnalyzeRequest(raw);
+    const testerCount = getTesterCountFromRequest(raw);
     const plan = await buildProductAnalysisPlan(request);
     const analysis = request.customPersona
       ? ProductAnalysisSchema.parse({
@@ -23,17 +29,33 @@ export async function POST(req: NextRequest) {
           personas: [...plan.analysis.personas, request.customPersona],
         })
       : plan.analysis;
+    const generatedPersonasToLaunch = limitPersonasForTesterCount(analysis, testerCount);
+    const personasToLaunch =
+      request.customPersona &&
+      !generatedPersonasToLaunch.some((persona) => persona.id === request.customPersona?.id)
+        ? [...generatedPersonasToLaunch, request.customPersona]
+        : generatedPersonasToLaunch;
 
     if (!isHCompanyConfigured()) {
-      return ok(createDemoRun({ url: request.url, objective: request.objective, analysis }), {
-        mode: "demo-replay",
-        configured: false,
-        reason: "HAI_API_KEY is not configured.",
-      });
+      const replay = createDemoRun({ url: request.url, objective: request.objective, analysis });
+      return ok(
+        {
+          ...replay,
+          sessions: replay.sessions.filter((session) =>
+            personasToLaunch.some((persona) => persona.id === session.personaId),
+          ),
+        },
+        {
+          mode: "demo-replay",
+          configured: false,
+          requestedCount: personasToLaunch.length,
+          reason: "HAI_API_KEY is not configured.",
+        },
+      );
     }
 
     const launched = await Promise.allSettled(
-      analysis.personas.map((persona) =>
+      personasToLaunch.map((persona) =>
         createHCompanySession(request, analysis, persona),
       ),
     );
@@ -42,11 +64,18 @@ export async function POST(req: NextRequest) {
     ).length;
 
     if (launchedCount === 0) {
+      const replay = createDemoRun({ url: request.url, objective: request.objective, analysis });
       return ok(
-        createDemoRun({ url: request.url, objective: request.objective, analysis }),
+        {
+          ...replay,
+          sessions: replay.sessions.filter((session) =>
+            personasToLaunch.some((persona) => persona.id === session.personaId),
+          ),
+        },
         {
           mode: "demo-replay",
           configured: true,
+          requestedCount: personasToLaunch.length,
           reason: "All H Company launches failed, so GrannySmith used replay mode.",
         },
       );
@@ -54,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     const sessions: NormalizedSession[] = launched.map((result, index) => {
       if (result.status === "fulfilled") return result.value;
-      const persona = analysis.personas[index];
+      const persona = personasToLaunch[index];
       return {
         sessionId: `h-failed-${persona.id}`,
         personaId: persona.id,
@@ -92,6 +121,7 @@ export async function POST(req: NextRequest) {
         personaModel: plan.model,
         personaFallbackReason: plan.fallbackReason,
         configured: true,
+        requestedCount: personasToLaunch.length,
         launchedCount,
       },
     );

@@ -20,6 +20,11 @@ import {
   parsePersistedLabState,
   PERSISTED_LAB_STATE_KEY,
 } from "@/lib/persistence/lab-state";
+import {
+  isTesterCount,
+  TESTER_COUNT_OPTIONS,
+  type TesterCount,
+} from "@/lib/run/tester-count";
 import type {
   NormalizedSession,
   RunSnapshot,
@@ -36,6 +41,7 @@ type ApiRunPayload = {
   meta?: {
     mode?: string;
     launchedCount?: number;
+    requestedCount?: number;
     reason?: string;
   };
   error?: { message?: string };
@@ -122,6 +128,7 @@ export default function Home() {
   const [targetUrl, setTargetUrl] = useState("https://demo-health.example");
   const [objective, setObjective] = useState(DEFAULT_OBJECTIVE);
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
+  const [testerCount, setTesterCount] = useState<TesterCount>(4);
   const [authorized, setAuthorized] = useState(true);
   const [loading, setLoading] = useState(false);
   const [dispatching, setDispatching] = useState(false);
@@ -140,7 +147,12 @@ export default function Home() {
   const pendingResultIds = useRef(new Set<string>());
   const lastReportKey = useRef<string | null>(null);
   const liveMode = snapshot.phase === "running";
-  const panelFeedback = getPanelFeedback({ snapshot, loading, dispatching });
+  const customPersonaCount =
+    snapshot.analysis?.personas.filter((persona) => persona.id.startsWith("custom-")).length ?? 0;
+  const generatedPersonaCount =
+    (snapshot.analysis?.personas.length ?? testerCount) - customPersonaCount;
+  const selectedTesterCount = Math.min(testerCount, generatedPersonaCount) + customPersonaCount;
+  const panelFeedback = getPanelFeedback({ snapshot, loading, dispatching, testerCount });
   const activeSessions = useMemo(
     () =>
       snapshot.sessions.filter(
@@ -217,6 +229,7 @@ export default function Home() {
       setTargetUrl(saved.targetUrl);
       setObjective(saved.objective);
       setSelectedPresetId(saved.selectedPresetId);
+      setTesterCount(isTesterCount(saved.testerCount) ? saved.testerCount : 4);
       setAuthorized(saved.authorized);
       setStatusLine(saved.statusLine);
       setPersistenceLine(`Restored saved run from ${new Date(saved.savedAt).toLocaleTimeString()}.`);
@@ -237,6 +250,7 @@ export default function Home() {
         targetUrl,
         objective,
         selectedPresetId,
+        testerCount,
         authorized,
         statusLine,
       });
@@ -258,6 +272,7 @@ export default function Home() {
     selectedPresetId,
     snapshot,
     statusLine,
+    testerCount,
     targetUrl,
   ]);
 
@@ -531,7 +546,7 @@ export default function Home() {
       persona.id.startsWith("custom-"),
     );
     setStatusLine(
-      `Launching ${snapshot.analysis?.personas.length ?? 4} H Company computer-use sessions.`,
+      `Launching ${selectedTesterCount} H Company computer-use session${selectedTesterCount === 1 ? "" : "s"}.`,
     );
 
     try {
@@ -541,6 +556,7 @@ export default function Home() {
         body: JSON.stringify({
           url: targetUrl,
           objective,
+          testerCount,
           authorizationConfirmed: authorized,
           customPersona,
         }),
@@ -558,7 +574,7 @@ export default function Home() {
       setDrawerOpen(false);
       if (payload.meta?.mode === "h-company") {
         setStatusLine(
-          `Launched ${payload.meta.launchedCount ?? payload.data.sessions.length} H Company sessions for ${payload.data.analysis?.productName ?? "target product"}.`,
+          `Launched ${payload.meta.launchedCount ?? payload.data.sessions.length}/${payload.meta.requestedCount ?? testerCount} H Company sessions for ${payload.data.analysis?.productName ?? "target product"}.`,
         );
       } else {
         setStatusLine(
@@ -886,6 +902,35 @@ export default function Home() {
               disabled={!snapshot.analysis || loading || dispatching || liveMode}
               onCreate={handleCreatePersona}
             />
+            <fieldset className="rounded-lg border border-ink/12 bg-white/70 p-4">
+              <legend className="px-1 text-sm font-bold">Grandmas to spawn</legend>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {TESTER_COUNT_OPTIONS.map((count) => (
+                  <button
+                    aria-pressed={testerCount === count}
+                    className={`min-h-11 rounded-md border px-3 text-sm font-black transition ${
+                      testerCount === count
+                        ? "border-mint bg-mint text-ink shadow-[0_10px_24px_rgba(98,196,155,0.22)]"
+                        : "border-ink/14 bg-white text-ink/68 hover:border-mint/50"
+                    }`}
+                    key={count}
+                    onClick={() => {
+                      setTesterCount(count);
+                      setStatusLine(
+                        `${count} grandma${count === 1 ? "" : "s"} selected for the next H Company dispatch.`,
+                      );
+                    }}
+                    type="button"
+                  >
+                    {count}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
+                Generates 4 personas; launches {testerCount} generated session{testerCount === 1 ? "" : "s"}
+                {customPersonaCount > 0 ? " plus your custom persona." : "."}
+              </p>
+            </fieldset>
             <section
               aria-live="polite"
               className={`rounded-lg border p-4 shadow-sm ${
@@ -972,7 +1017,7 @@ export default function Home() {
               <div>
                 <p className="text-sm uppercase tracking-[0.18em] text-paper/55">Live Lab</p>
                 <h2 className="text-2xl font-black">
-                  {snapshot.analysis?.personas.length ?? 4} testers, one product
+                  {selectedTesterCount} selected tester{selectedTesterCount === 1 ? "" : "s"}, one product
                 </h2>
               </div>
               <div className="rounded bg-mint px-3 py-1 text-sm font-black text-ink">
