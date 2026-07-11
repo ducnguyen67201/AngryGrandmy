@@ -117,4 +117,22 @@ describe("lab state persistence", () => {
       }),
     ).toBe(false);
   });
+
+  it("saves explicit persona acceptance with the generated roster", () => {
+    const persisted = buildPersistedLabState({
+      snapshot: { ...createDemoRun(), phase: "revealing" },
+      targetUrl: "https://gettrustloop.app/",
+      objective: "Find the primary workflow.",
+      selectedPresetId: null,
+      testerCount: 2,
+      authorized: true,
+      personasAccepted: true,
+      statusLine: "Persona suggestions accepted and saved.",
+    });
+
+    expect(
+      parsePersistedLabState(JSON.stringify(persisted))?.personasAccepted,
+    ).toBe(true);
+    expect(persisted.snapshot.analysis?.personas).toHaveLength(4);
+  });
 });

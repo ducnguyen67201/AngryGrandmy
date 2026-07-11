@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildProductAnalysis } from "./analyze-product";
+import {
+  buildPersonaGenerationPrompt,
+  buildProductAnalysis,
+} from "./analyze-product";
 
 const baseRequest = {
   authorizationConfirmed: true,
@@ -43,5 +46,20 @@ describe("buildProductAnalysis", () => {
     expect(analysis.personas[2].trustBoundaries.join(" ")).toContain(
       "shipping, return, or payment terms",
     );
+  });
+
+  it("asks the model to invent product-specific personas instead of reusing seed identities", () => {
+    const request = {
+      ...baseRequest,
+      url: "https://developer-tools.example",
+      objective: "Integrate the API safely",
+    };
+    const prompt = buildPersonaGenerationPrompt(
+      request,
+      buildProductAnalysis(request),
+    );
+
+    expect(prompt).toContain("Invent four product-specific behavioral personas");
+    expect(prompt).toContain("Do not reuse Linda, Rosa, Mei, or Joan");
   });
 });
