@@ -33,6 +33,39 @@ type PersonaSeed = {
   visualVariant: 0 | 1 | 2 | 3;
 };
 
+export type ProductAnalysisMode = "openai" | "holo" | "heuristic";
+
+export type ProductAnalysisPlan = {
+  analysis: ProductAnalysis;
+  mode: ProductAnalysisMode;
+  model: string | null;
+  fallbackReason: string | null;
+};
+
+type HoloChatResponse = {
+  choices?: Array<{
+    message?: {
+      content?: unknown;
+    };
+  }>;
+};
+
+type OpenAIResponse = {
+  output_text?: unknown;
+  output?: Array<{
+    content?: Array<{
+      text?: unknown;
+    }>;
+  }>;
+};
+
+const HOLO_BASE_URL =
+  process.env.HAI_MODELS_BASE_URL ?? "https://api.hcompany.ai/v1";
+const HOLO_MODEL = process.env.HAI_PERSONA_MODEL ?? "holo3-1-35b-a3b";
+const OPENAI_BASE_URL =
+  process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+const OPENAI_MODEL = process.env.OPENAI_PERSONA_MODEL ?? "gpt-4.1-mini";
+
 const DOMAINS: Array<{ match: RegExp; value: ProductDomain }> = [
   {
     match: /doctor|clinic|health|appointment|patient|medical|care|dental|therapy|pharma|hospital/i,
@@ -270,6 +303,72 @@ export function buildProductAnalysis(request: AnalyzeRequest): ProductAnalysis {
   return ProductAnalysisSchema.parse(analysis);
 }
 
+export async function buildProductAnalysisPlan(
+  request: AnalyzeRequest,
+): Promise<ProductAnalysisPlan> {
+  const heuristic = buildProductAnalysis(request);
+
+  if (process.env.GRANNYSMITH_PERSONA_MODE === "heuristic") {
+    return {
+      analysis: heuristic,
+      mode: "heuristic",
+      model: null,
+      fallbackReason: "GRANNYSMITH_PERSONA_MODE=heuristic",
+    };
+  }
+
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const refined = await refineWithOpenAI(request, heuristic);
+      return {
+        analysis: refined,
+        mode: "openai",
+        model: OPENAI_MODEL,
+        fallbackReason: null,
+      };
+    } catch (error) {
+      if (!process.env.HAI_API_KEY) {
+        return {
+          analysis: heuristic,
+          mode: "heuristic",
+          model: null,
+          fallbackReason:
+            error instanceof Error
+              ? error.message
+              : "OpenAI persona generation failed.",
+        };
+      }
+    }
+  }
+
+  if (!process.env.HAI_API_KEY) {
+    return {
+      analysis: heuristic,
+      mode: "heuristic",
+      model: null,
+      fallbackReason: "No LLM API key is configured.",
+    };
+  }
+
+  try {
+    const refined = await refineWithHolo(request, heuristic);
+    return {
+      analysis: refined,
+      mode: "holo",
+      model: HOLO_MODEL,
+      fallbackReason: null,
+    };
+  } catch (error) {
+    return {
+      analysis: heuristic,
+      mode: "heuristic",
+      model: null,
+      fallbackReason:
+        error instanceof Error ? error.message : "Holo persona generation failed.",
+    };
+  }
+}
+
 function buildPersona(
   seed: PersonaSeed,
   productName: string,
@@ -381,4 +480,203 @@ function toSentenceCase(value: string) {
 
 function clampStepBudget(value: number) {
   return Math.max(4, Math.min(30, value));
+}
+
+async function refineWithHolo(
+  request: AnalyzeRequest,
+  heuristic: ProductAnalysis,
+): Promise<ProductAnalysis> {
+  const response = await fetch(`${HOLO_BASE_URL.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.HAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: HOLO_MODEL,
+      temperature: 0.35,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You generate structured synthetic usability test plans. Return valid JSON only. Do not include markdown.",
+        },
+        {
+          role: "user",
+          content: buildLlmPrompt(request, heuristic),
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(35_000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Holo persona generation failed with ${response.status}.`);
+  }
+
+  const json = (await response.json()) as HoloChatResponse;
+  const content = json.choices?.[0]?.message?.content;
+  const parsed = parseModelJson(content);
+  return normalizeModelAnalysis(parsed, heuristic);
+}
+
+async function refineWithOpenAI(
+  request: AnalyzeRequest,
+  heuristic: ProductAnalysis,
+): Promise<ProductAnalysis> {
+  const response = await fetch(`${OPENAI_BASE_URL.replace(/\/$/, "")}/responses`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      input: [
+        {
+          role: "system",
+          content: [
+            {
+              type: "input_text",
+              text: "You generate structured synthetic usability test plans. Return valid JSON only. Do not include markdown.",
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: buildLlmPrompt(request, heuristic),
+            },
+          ],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_object",
+        },
+      },
+    }),
+    signal: AbortSignal.timeout(35_000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `OpenAI persona generation failed with ${response.status}: ${body.slice(0, 500)}`,
+    );
+  }
+
+  const json = (await response.json()) as OpenAIResponse;
+  const parsed = parseModelJson(readOpenAIText(json));
+  return normalizeModelAnalysis(parsed, heuristic);
+}
+
+function normalizeModelAnalysis(
+  parsed: unknown,
+  heuristic: ProductAnalysis,
+): ProductAnalysis {
+  const candidate = ProductAnalysisSchema.parse(parsed);
+
+  return ProductAnalysisSchema.parse({
+    ...candidate,
+    personas: candidate.personas.map((persona, index) => ({
+      ...persona,
+      id: heuristic.personas[index].id,
+      voiceSlot: heuristic.personas[index].voiceSlot,
+      visualVariant: heuristic.personas[index].visualVariant,
+      dispatchInstruction:
+        persona.dispatchInstruction ??
+        buildDispatchInstruction(
+          candidate.productName,
+          {
+            category: candidate.productCategory,
+            taskNoun: "workflow",
+            primaryAction: candidate.primaryFlows[0]?.goal ?? "complete the task",
+            safeStopPoint:
+              candidate.primaryFlows[0]?.safeStopPoint ??
+              heuristic.primaryFlows[0].safeStopPoint,
+            trustRisk: persona.trustBoundaries.join("; "),
+            jargonRisk: "product-specific wording",
+            irreversibleAction: persona.stopConditions[0] ?? "an irreversible action",
+            likelyDataRequest: "personal information",
+            expectedStepBudget: persona.expectedStepBudget,
+          },
+          persona,
+        ),
+    })) as ProductAnalysis["personas"],
+  });
+}
+
+function buildLlmPrompt(request: AnalyzeRequest, heuristic: ProductAnalysis) {
+  return JSON.stringify({
+    instruction:
+      "Refine this heuristic plan into a product-specific GrannySmith usability test plan for H Company computer-use agents. Keep exactly four personas with ids linda, rosa, mei, joan. Make tasks concrete for the URL/objective. Add dispatchInstruction for each persona. Avoid stereotypes; describe behavioral constraints. Stop before real purchase, booking, payment, account mutation, private data submission, credentials, or irreversible actions.",
+    target: {
+      url: request.url,
+      objective: request.objective ?? null,
+    },
+    requiredShape: {
+      productName: "string",
+      productCategory: "string",
+      summary: "string",
+      primaryFlows: [
+        {
+          name: "string",
+          goal: "string",
+          safeStopPoint: "string",
+        },
+      ],
+      globalSafetyBoundaries: ["string"],
+      personas: [
+        {
+          id: "linda|rosa|mei|joan",
+          displayName: "string",
+          tagline: "string",
+          context: "string",
+          digitalConfidence: "low|medium|high",
+          behaviors: ["string"],
+          accessibilityContext: ["string"],
+          trustBoundaries: ["string"],
+          task: "string",
+          successCriteria: ["string"],
+          stopConditions: ["string"],
+          expectedStepBudget: "integer 4-30",
+          introLine: "string max 240 chars",
+          dispatchInstruction: "string max 4000 chars",
+          voiceSlot: "0|1|2|3",
+          visualVariant: "0|1|2|3",
+        },
+      ],
+    },
+    heuristic,
+  });
+}
+
+function readOpenAIText(json: OpenAIResponse): unknown {
+  if (typeof json.output_text === "string") return json.output_text;
+
+  for (const item of json.output ?? []) {
+    for (const content of item.content ?? []) {
+      if (typeof content.text === "string") return content.text;
+    }
+  }
+
+  return null;
+}
+
+function parseModelJson(content: unknown): unknown {
+  if (typeof content !== "string") {
+    throw new Error("Holo response did not include string content.");
+  }
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("Holo response was not valid JSON.");
+    return JSON.parse(match[0]);
+  }
 }
