@@ -1,9 +1,30 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ExternalLink, Play, ShieldCheck, Sparkles } from "lucide-react";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
-import type { RunSnapshot, VisualAgentState } from "@/lib/schemas/run";
+import type {
+  NormalizedSession,
+  RunSnapshot,
+  VisualAgentState,
+} from "@/lib/schemas/run";
+
+type ApiRunPayload = {
+  data?: RunSnapshot;
+  meta?: {
+    mode?: string;
+    launchedCount?: number;
+    reason?: string;
+  };
+  error?: { message?: string };
+};
+
+const TERMINAL_STATUSES = new Set<NormalizedSession["status"]>([
+  "completed",
+  "timed_out",
+  "interrupted",
+  "failed",
+]);
 
 export default function Home() {
   const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createDemoRun());
@@ -13,6 +34,14 @@ export default function Home() {
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
+  const liveMode = snapshot.phase === "running";
+  const activeSessions = useMemo(
+    () =>
+      snapshot.sessions.filter(
+        (session) => !TERMINAL_STATUSES.has(session.status),
+      ),
+    [snapshot.sessions],
+  );
   const report = snapshot.report;
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
@@ -21,13 +50,72 @@ export default function Home() {
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
     snapshot.sessions[0];
 
+  useEffect(() => {
+    if (!liveMode || activeSessions.length === 0) return;
+
+    let cancelled = false;
+
+    async function pollSessions() {
+      const updates = await Promise.all(
+        activeSessions.map(async (session) => {
+          try {
+            const params = new URLSearchParams({
+              sessionId: session.sessionId,
+              personaId: session.personaId,
+            });
+            const response = await fetch(`/api/session-status?${params}`);
+            const payload = (await response.json()) as {
+              data?: NormalizedSession | null;
+            };
+            return payload.data ?? session;
+          } catch {
+            return session;
+          }
+        }),
+      );
+
+      if (cancelled) return;
+
+      const updatesById = new Map(
+        updates.map((session) => [session.sessionId, session]),
+      );
+      setSnapshot((current) => ({
+        ...current,
+        sessions: current.sessions.map(
+          (session) => updatesById.get(session.sessionId) ?? session,
+        ),
+        updatedAt: new Date().toISOString(),
+      }));
+      setStatusLine(
+        `Polling ${updates.length} H Company session${updates.length === 1 ? "" : "s"} for live progress.`,
+      );
+    }
+
+    const interval = window.setInterval(pollSessions, 4500);
+    void pollSessions();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeSessions, liveMode]);
+
+  useEffect(() => {
+    if (!liveMode) return;
+    if (activeSessions.length > 0) return;
+
+    setStatusLine(
+      "H sessions reached a terminal state. Next build: parse final answers into scored findings.",
+    );
+  }, [activeSessions.length, liveMode]);
+
   async function handleLaunch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
-    setStatusLine("Dispatching through the same API contract the live demo will use.");
+    setStatusLine("Launching four H Company computer-use sessions.");
 
     try {
-      const response = await fetch("/api/analyze-product", {
+      const response = await fetch("/api/run-h-agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -36,22 +124,24 @@ export default function Home() {
           authorizationConfirmed: authorized,
         }),
       });
-      const payload = (await response.json()) as {
-        data?: RunSnapshot;
-        meta?: { mode?: string };
-        error?: { message?: string };
-      };
+      const payload = (await response.json()) as ApiRunPayload;
 
       if (!response.ok || !payload.data) {
         throw new Error(payload.error?.message ?? "Could not start analysis.");
       }
 
       setSnapshot(payload.data);
-      setStatusLine(
-        `Loaded ${payload.data.analysis?.productName ?? "target product"} through /api/analyze-product (${payload.meta?.mode ?? "demo"}).`,
-      );
+      if (payload.meta?.mode === "h-company") {
+        setStatusLine(
+          `Launched ${payload.meta.launchedCount ?? payload.data.sessions.length} H Company sessions for ${payload.data.analysis?.productName ?? "target product"}.`,
+        );
+      } else {
+        setStatusLine(
+          `Replay fallback loaded for ${payload.data.analysis?.productName ?? "target product"}${payload.meta?.reason ? `: ${payload.meta.reason}` : "."}`,
+        );
+      }
     } catch (error) {
-      setStatusLine(error instanceof Error ? error.message : "Could not start analysis.");
+      setStatusLine(error instanceof Error ? error.message : "Could not launch H agents.");
     } finally {
       setLoading(false);
     }
@@ -131,7 +221,9 @@ export default function Home() {
                 <p className="text-sm uppercase tracking-[0.18em] text-paper/55">Live Lab</p>
                 <h2 className="text-2xl font-black">Four testers, one product</h2>
               </div>
-              <div className="rounded bg-mint px-3 py-1 text-sm font-black text-ink">Demo Mode</div>
+              <div className="rounded bg-mint px-3 py-1 text-sm font-black text-ink">
+                {liveMode ? "Live H Mode" : "Demo Mode"}
+              </div>
             </div>
 
             <div className="grid h-full min-h-[520px] grid-cols-2 gap-3 p-4 pt-24">
@@ -200,7 +292,10 @@ export default function Home() {
         </div>
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <ExternalLink className="mb-4 text-tomato" />
-          <p className="text-3xl font-black">{snapshot.sessions.length} replays</p>
+          <p className="text-3xl font-black">
+            {liveMode ? activeSessions.length : snapshot.sessions.length}{" "}
+            {liveMode ? "live" : "replays"}
+          </p>
           <p className="mt-2 text-sm text-ink/66">Each session keeps an H Agent View evidence link.</p>
         </div>
       </section>

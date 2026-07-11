@@ -30,6 +30,20 @@ export async function POST(req: NextRequest) {
         createHCompanySession(request, analysis, persona),
       ),
     );
+    const launchedCount = launched.filter(
+      (item) => item.status === "fulfilled",
+    ).length;
+
+    if (launchedCount === 0) {
+      return ok(
+        createDemoRun({ url: request.url, objective: request.objective, analysis }),
+        {
+          mode: "demo-replay",
+          configured: true,
+          reason: "All H Company launches failed, so GrannySmith used replay mode.",
+        },
+      );
+    }
 
     const sessions: NormalizedSession[] = launched.map((result, index) => {
       if (result.status === "fulfilled") return result.value;
@@ -68,8 +82,7 @@ export async function POST(req: NextRequest) {
       {
         mode: "h-company",
         configured: true,
-        launchedCount: launched.filter((item) => item.status === "fulfilled")
-          .length,
+        launchedCount,
       },
     );
   } catch (error) {
