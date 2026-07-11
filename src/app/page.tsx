@@ -44,6 +44,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
@@ -82,6 +83,16 @@ export default function Home() {
     selectedSession?.finding?.summary ??
     selectedPersona?.introLine ??
     "No persona finding is ready yet.";
+  const completedWithFindings = snapshot.sessions.filter(
+    (session) => session.finding,
+  ).length;
+  const scoreStatus = liveMode
+    ? activeSessions.length > 0
+      ? "provisional"
+      : completedWithFindings > 0
+        ? "finalizing"
+        : "pending"
+    : "final";
 
   useEffect(() => {
     if (!liveMode || activeSessions.length === 0) return;
@@ -268,6 +279,7 @@ export default function Home() {
       }
 
       setSnapshot(payload.data);
+      setDrawerOpen(false);
       if (payload.meta?.mode === "h-company") {
         setStatusLine(
           `Launched ${payload.meta.launchedCount ?? payload.data.sessions.length} H Company sessions for ${payload.data.analysis?.productName ?? "target product"}.`,
@@ -418,11 +430,23 @@ export default function Home() {
                 const session = sessionsByPersona.get(persona.id);
 
                 return (
-                <div
-                  className={`relative flex flex-col justify-end overflow-hidden rounded-md border p-4 ${stationClass(
+                <button
+                  className={`relative flex flex-col justify-end overflow-hidden rounded-md border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-2xl focus:outline-none focus:ring-2 focus:ring-mint/80 ${stationClass(
                     session?.visualState ?? "queued"
-                  )}`}
+                  )} ${
+                    snapshot.selectedPersonaId === persona.id
+                      ? "ring-2 ring-mint/80"
+                      : ""
+                  }`}
                   key={persona.id}
+                  onClick={() => {
+                    setSnapshot((current) => ({
+                      ...current,
+                      selectedPersonaId: persona.id,
+                    }));
+                    setDrawerOpen(true);
+                  }}
+                  type="button"
                 >
                   <div className="absolute left-5 top-5 h-20 w-24 rounded-md border border-mint/30 bg-[#101415] shadow-[0_0_24px_rgba(98,196,155,0.18)]">
                     <div className="m-2 h-3 rounded bg-mint/70" />
@@ -451,6 +475,7 @@ export default function Home() {
                       <a
                         className="mt-3 inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.12em] text-mint transition hover:text-paper"
                         href={session.agentViewUrl}
+                        onClick={(event) => event.stopPropagation()}
                         rel="noreferrer"
                         target="_blank"
                       >
@@ -459,7 +484,7 @@ export default function Home() {
                       </a>
                     ) : null}
                   </div>
-                </div>
+                </button>
               );
               })}
             </div>
@@ -481,7 +506,10 @@ export default function Home() {
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <ShieldCheck className="mb-4 text-mint" />
           <p className="text-3xl font-black">{report?.score ?? 0}/100</p>
-          <p className="mt-2 text-sm text-ink/66">Human-Friendly Score from deterministic evidence.</p>
+          <p className="mt-2 text-sm text-ink/66">
+            Human-Friendly Score is {scoreStatus}; {completedWithFindings}/
+            {snapshot.sessions.length} findings captured.
+          </p>
         </div>
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <Sparkles className="mb-4 text-grape" />
@@ -538,7 +566,155 @@ export default function Home() {
           </div>
         </article>
       </section>
+
+      {drawerOpen ? (
+        <section className="fixed inset-y-0 right-0 z-50 w-full max-w-xl overflow-y-auto border-l border-ink/12 bg-paper p-5 shadow-2xl md:p-7">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.16em] text-ink/45">
+                Evidence Drawer
+              </p>
+              <h2 className="mt-2 text-3xl font-black">
+                {selectedPersona?.displayName ?? "Persona"} report
+              </h2>
+              <p className="mt-2 text-sm font-semibold text-brass">
+                {selectedPersona?.tagline ?? "Synthetic tester"}
+              </p>
+            </div>
+            <button
+              className="rounded-md border border-ink/15 px-3 py-2 text-sm font-black"
+              onClick={() => setDrawerOpen(false)}
+              type="button"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            <MetricTile label="Status" value={selectedSession?.status ?? "queued"} />
+            <MetricTile
+              label="Steps"
+              value={String(selectedSession?.stepCount ?? 0)}
+            />
+            <MetricTile
+              label="Score impact"
+              value={scoreImpactLabel(selectedSession)}
+            />
+          </div>
+
+          <section className="mt-6 rounded-lg border border-ink/12 bg-white/70 p-4">
+            <p className="text-sm font-bold uppercase tracking-[0.14em] text-ink/45">
+              Task
+            </p>
+            <p className="mt-3 leading-7 text-ink/75">
+              {selectedPersona?.task ?? "No task selected yet."}
+            </p>
+          </section>
+
+          <section className="mt-4 rounded-lg border border-ink/12 bg-white/70 p-4">
+            <p className="text-sm font-bold uppercase tracking-[0.14em] text-ink/45">
+              Finding
+            </p>
+            <p className="mt-3 text-xl font-black">
+              {selectedSession?.finding?.completion ?? "waiting"}
+            </p>
+            <p className="mt-3 leading-7 text-ink/75">
+              {selectedSession?.finding?.summary ??
+                selectedSession?.latestActionLabel ??
+                "No final finding has arrived yet."}
+            </p>
+          </section>
+
+          <section className="mt-4 rounded-lg border border-ink/12 bg-white/70 p-4">
+            <p className="text-sm font-bold uppercase tracking-[0.14em] text-ink/45">
+              Evidence
+            </p>
+            <div className="mt-3 grid gap-2">
+              {(selectedSession?.finding?.evidence.length
+                ? selectedSession.finding.evidence
+                : ["Evidence will appear when the H session result is parsed."]
+              ).map((item) => (
+                <p
+                  className="rounded-md border border-ink/10 bg-paper/70 p-3 text-sm leading-6 text-ink/72"
+                  key={item}
+                >
+                  {item}
+                </p>
+              ))}
+            </div>
+          </section>
+
+          <section className="mt-4 rounded-lg border border-ink/12 bg-white/70 p-4">
+            <p className="text-sm font-bold uppercase tracking-[0.14em] text-ink/45">
+              Friction Events
+            </p>
+            <div className="mt-3 grid gap-3">
+              {(selectedSession?.finding?.frictionEvents.length
+                ? selectedSession.finding.frictionEvents
+                : []
+              ).map((event) => (
+                <article
+                  className="rounded-md border border-ink/10 bg-paper/70 p-3"
+                  key={`${event.step}-${event.observation}`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-black capitalize">{event.category}</p>
+                    <p className="rounded bg-ink px-2 py-1 text-xs font-black text-paper">
+                      Severity {event.severity}/5
+                    </p>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-ink/75">
+                    {event.observation}
+                  </p>
+                  <p className="mt-3 text-sm font-semibold text-brass">
+                    Fix: {event.recommendation}
+                  </p>
+                </article>
+              ))}
+              {!selectedSession?.finding?.frictionEvents.length ? (
+                <p className="rounded-md border border-ink/10 bg-paper/70 p-3 text-sm leading-6 text-ink/60">
+                  No friction events have been captured yet.
+                </p>
+              ) : null}
+            </div>
+          </section>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              className="inline-flex min-h-10 items-center gap-2 rounded-md bg-ink px-4 text-sm font-black text-paper disabled:cursor-not-allowed disabled:opacity-55"
+              disabled={voiceLoading || !selectedPersona}
+              onClick={handleVoice}
+              type="button"
+            >
+              <Volume2 size={17} />
+              Speak
+            </button>
+            {selectedSession?.agentViewUrl ? (
+              <a
+                className="inline-flex min-h-10 items-center gap-2 rounded-md border border-ink/15 px-4 text-sm font-black text-ink"
+                href={selectedSession.agentViewUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <ExternalLink size={16} />
+                Watch Agent
+              </a>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
     </main>
+  );
+}
+
+function MetricTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-ink/12 bg-white/70 p-3">
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-ink/45">
+        {label}
+      </p>
+      <p className="mt-2 text-lg font-black">{value}</p>
+    </div>
   );
 }
 
@@ -570,6 +746,20 @@ function stationClass(state: VisualAgentState): string {
 
 function variantClass(variant: number): string {
   return ["bg-grape", "bg-mint", "bg-brass", "bg-tomato"][variant] ?? "bg-grape";
+}
+
+function scoreImpactLabel(session?: NormalizedSession): string {
+  switch (session?.finding?.completion) {
+    case "success":
+      return "positive";
+    case "partial":
+      return "mixed";
+    case "blocked":
+    case "abandoned":
+      return "negative";
+    default:
+      return "pending";
+  }
 }
 
 function speakWithBrowser(text: string) {
