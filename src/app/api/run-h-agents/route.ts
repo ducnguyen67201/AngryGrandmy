@@ -5,7 +5,7 @@ import {
   createHCompanySession,
   isHCompanyConfigured,
 } from "@/lib/integrations/h-company";
-import { buildProductAnalysis } from "@/lib/product/analyze-product";
+import { buildProductAnalysisPlan } from "@/lib/product/analyze-product";
 import type { NormalizedSession } from "@/lib/schemas/run";
 import { validateAnalyzeRequest } from "@/lib/security/url-policy";
 
@@ -15,7 +15,8 @@ export const maxDuration = 120;
 export async function POST(req: NextRequest) {
   try {
     const request = validateAnalyzeRequest(await req.json());
-    const analysis = buildProductAnalysis(request);
+    const plan = await buildProductAnalysisPlan(request);
+    const analysis = plan.analysis;
 
     if (!isHCompanyConfigured()) {
       return ok(createDemoRun({ url: request.url, objective: request.objective, analysis }), {
@@ -81,6 +82,9 @@ export async function POST(req: NextRequest) {
       },
       {
         mode: "h-company",
+        personaMode: plan.mode,
+        personaModel: plan.model,
+        personaFallbackReason: plan.fallbackReason,
         configured: true,
         launchedCount,
       },
