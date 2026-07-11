@@ -23,15 +23,6 @@ export const RunPhaseSchema = z.enum([
   "error",
 ]);
 
-export const AnalyzeRequestSchema = z.object({
-  url: z.string().url().refine((value) => {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  }, "Only HTTP and HTTPS URLs are supported."),
-  objective: z.string().trim().max(500).optional(),
-  authorizationConfirmed: z.literal(true),
-});
-
 export const PersonaScenarioSchema = z.object({
   id: z.string().min(1),
   displayName: z.string().min(1),
@@ -56,6 +47,16 @@ export const PersonaScenarioSchema = z.object({
   ]),
 });
 
+export const AnalyzeRequestSchema = z.object({
+  url: z.string().url().refine((value) => {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  }, "Only HTTP and HTTPS URLs are supported."),
+  objective: z.string().trim().max(500).optional(),
+  authorizationConfirmed: z.literal(true),
+  customPersona: PersonaScenarioSchema.optional(),
+});
+
 export const ProductAnalysisSchema = z.object({
   productName: z.string().min(1),
   productCategory: z.string().min(1),
@@ -70,12 +71,7 @@ export const ProductAnalysisSchema = z.object({
     )
     .min(1),
   globalSafetyBoundaries: z.array(z.string().min(1)).min(1),
-  personas: z.tuple([
-    PersonaScenarioSchema,
-    PersonaScenarioSchema,
-    PersonaScenarioSchema,
-    PersonaScenarioSchema,
-  ]),
+  personas: z.array(PersonaScenarioSchema).min(4).max(5),
 });
 
 export const FrictionEventSchema = z.object({
@@ -154,7 +150,7 @@ export const UsabilityReportSchema = z.object({
     recovery: z.number().min(0).max(15),
     trust: z.number().min(0).max(10),
   }),
-  completedCount: z.number().int().min(0).max(4),
+  completedCount: z.number().int().min(0).max(5),
   sharedHotspots: z.array(SharedHotspotSchema),
   topRecommendations: z.array(z.string().min(1)),
   disclosure: z.literal(

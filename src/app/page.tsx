@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
+import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
   buildVisualHotspots,
@@ -27,6 +28,7 @@ import type {
 } from "@/lib/schemas/run";
 import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
+import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -523,7 +525,12 @@ export default function Home() {
 
   async function handleLaunch() {
     setDispatching(true);
-    setStatusLine("Launching four H Company computer-use sessions.");
+    const customPersona = snapshot.analysis?.personas.find((persona) =>
+      persona.id.startsWith("custom-"),
+    );
+    setStatusLine(
+      `Launching ${snapshot.analysis?.personas.length ?? 4} H Company computer-use sessions.`,
+    );
 
     try {
       const response = await fetch("/api/run-h-agents", {
@@ -533,6 +540,7 @@ export default function Home() {
           url: targetUrl,
           objective,
           authorizationConfirmed: authorized,
+          customPersona,
         }),
       });
       const payload = (await response.json()) as ApiRunPayload;
@@ -559,6 +567,41 @@ export default function Home() {
       setStatusLine(error instanceof Error ? error.message : "Could not launch H agents.");
     } finally {
       setDispatching(false);
+    }
+  }
+
+  function handleCreatePersona(draft: PersonaDraft) {
+    if (!snapshot.analysis) return;
+
+    try {
+      const customPersona = createCustomPersona({
+        ...draft,
+        objective: objective.trim() || DEFAULT_OBJECTIVE,
+        globalSafetyBoundaries: snapshot.analysis.globalSafetyBoundaries,
+      });
+
+      setSnapshot((current) => {
+        if (!current.analysis) return current;
+        const generatedPersonas = current.analysis.personas.filter(
+          (persona) => !persona.id.startsWith("custom-"),
+        );
+        return {
+          ...current,
+          analysis: {
+            ...current.analysis,
+            personas: [...generatedPersonas, customPersona],
+          },
+          selectedPersonaId: customPersona.id,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+      setStatusLine(
+        `${customPersona.displayName} joined the panel and will be dispatched to H Company.`,
+      );
+    } catch (error) {
+      setStatusLine(
+        error instanceof Error ? error.message : "Could not create the custom persona.",
+      );
     }
   }
 
@@ -699,7 +742,7 @@ export default function Home() {
             <strong>Product decision</strong>
           </div>
           <div className="signal-bridge-metrics">
-            <span><b>04</b> personas</span>
+            <span><b>{snapshot.analysis?.personas.length ?? 4}</b> personas</span>
             <span><b>{snapshot.sessions.reduce((total, session) => total + session.stepCount, 0)}</b> actions watched</span>
             <span><b>{visualHotspots.length}</b> shared signals</span>
           </div>
@@ -792,6 +835,10 @@ export default function Home() {
               }}
               value={objective}
             />
+            <PersonaBuilder
+              disabled={!snapshot.analysis || loading || dispatching || liveMode}
+              onCreate={handleCreatePersona}
+            />
             <section
               aria-live="polite"
               className={`rounded-lg border p-4 shadow-sm ${
@@ -877,7 +924,9 @@ export default function Home() {
             <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-5 py-4">
               <div>
                 <p className="text-sm uppercase tracking-[0.18em] text-paper/55">Live Lab</p>
-                <h2 className="text-2xl font-black">Four testers, one product</h2>
+                <h2 className="text-2xl font-black">
+                  {snapshot.analysis?.personas.length ?? 4} testers, one product
+                </h2>
               </div>
               <div className="rounded bg-mint px-3 py-1 text-sm font-black text-ink">
                 {liveMode ? "Live H Mode" : "Demo Mode"}
@@ -980,7 +1029,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-4">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             {snapshot.analysis?.personas.map((persona) => (
               <article className="rounded-lg border border-ink/12 bg-white/72 p-4 shadow-sm" key={persona.id}>
                 <div className="flex items-start justify-between gap-3">
