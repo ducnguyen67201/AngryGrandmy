@@ -26,6 +26,7 @@ import type {
   VisualAgentState,
 } from "@/lib/schemas/run";
 import { getPanelFeedback } from "@/lib/ui/panel-feedback";
+import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -164,6 +165,11 @@ export default function Home() {
     () => summarizeHotspots(visualHotspots),
     [visualHotspots],
   );
+  const heatmapDisplay = getHeatmapDisplay({
+    hotspotCount: visualHotspots.length,
+    heatmapLine,
+    liveMode,
+  });
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
   );
@@ -877,8 +883,27 @@ export default function Home() {
                 {liveMode ? "Live H Mode" : "Demo Mode"}
               </div>
             </div>
+            <div className="absolute left-5 right-5 top-20 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/12 bg-black/45 px-4 py-3 shadow-2xl backdrop-blur">
+              <div>
+                <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-mint">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-mint shadow-[0_0_18px_rgba(98,196,155,0.9)]" />
+                  {heatmapDisplay.label}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-paper/70">
+                  {heatmapDisplay.hint}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.14em]">
+                <span className="rounded-full bg-tomato px-3 py-1 text-white shadow-[0_0_22px_rgba(229,88,72,0.55)]">
+                  {heatmapDisplay.countLabel}
+                </span>
+                <span className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-paper/70">
+                  {heatmapDisplay.sourceLabel}
+                </span>
+              </div>
+            </div>
 
-            <div className="grid h-full min-h-[520px] grid-cols-2 gap-3 p-4 pt-24">
+            <div className="grid h-full min-h-[560px] grid-cols-2 gap-3 p-4 pt-40">
               {snapshot.analysis?.personas.map((persona) => {
                 const session = sessionsByPersona.get(persona.id);
                 const personaHotspots = visualHotspots.filter(
@@ -908,6 +933,11 @@ export default function Home() {
                     <div className="m-2 h-3 rounded bg-mint/70" />
                     <div className="mx-2 mt-3 h-2 rounded bg-white/20" />
                     <div className="mx-2 mt-2 h-2 w-2/3 rounded bg-white/16" />
+                    {personaHotspots.length > 0 ? (
+                      <div className="absolute -bottom-6 left-0 rounded bg-black/70 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-mint">
+                        Heatmap
+                      </div>
+                    ) : null}
                     <HotspotLayer
                       hotspots={personaHotspots}
                       onSelect={handleHotspotSelect}
@@ -990,6 +1020,9 @@ export default function Home() {
           <p className="text-3xl font-black">{visualHotspots.length} hotspots</p>
           <p className="mt-2 text-sm text-ink/66">
             {hotspotSummary(hotspotCounts)}
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink/70">
+            Look in the Live Lab: the glowing numbered markers are the heatmap.
           </p>
           <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink/40">
             {heatmapLine}
@@ -1254,11 +1287,11 @@ function HotspotLayer({
   if (hotspots.length === 0) return null;
 
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0 z-20">
       {hotspots.slice(0, 4).map((hotspot) => (
         <button
           aria-label={`${hotspot.category} hotspot: ${hotspot.evidence}`}
-          className={`absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/80 text-[10px] font-black text-white shadow-lg ${hotspotClass(
+          className={`absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-2xl transition hover:scale-125 focus:outline-none focus:ring-2 focus:ring-white ${hotspotClass(
             hotspot.severity,
           )}`}
           key={hotspot.id}
@@ -1270,7 +1303,8 @@ function HotspotLayer({
           title={`${hotspot.label}: ${hotspot.recommendation}`}
           type="button"
         >
-          <span className="absolute inset-0 animate-ping rounded-full bg-current opacity-35" />
+          <span className="absolute -inset-2 animate-ping rounded-full bg-white/35" />
+          <span className="absolute -inset-1 rounded-full border border-white/45" />
           <span className="relative">{hotspot.severity}</span>
         </button>
       ))}
@@ -1309,9 +1343,9 @@ function variantClass(variant: number): string {
 }
 
 function hotspotClass(severity: number): string {
-  if (severity >= 4) return "bg-tomato text-tomato";
-  if (severity === 3) return "bg-brass text-brass";
-  return "bg-mint text-mint";
+  if (severity >= 4) return "bg-tomato shadow-[0_0_34px_rgba(229,88,72,0.85)]";
+  if (severity === 3) return "bg-brass shadow-[0_0_30px_rgba(191,131,45,0.8)]";
+  return "bg-mint shadow-[0_0_28px_rgba(98,196,155,0.78)]";
 }
 
 function hotspotSummary(counts: Record<string, number>): string {
