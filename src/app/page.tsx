@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ExternalLink, Play, ShieldCheck, Sparkles } from "lucide-react";
+import { ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import type {
   NormalizedSession,
@@ -20,6 +20,16 @@ type ApiRunPayload = {
   error?: { message?: string };
 };
 
+type VoiceReactionPayload = {
+  data?: {
+    source: "gradium" | "text";
+    audioUrl: string | null;
+    audioBase64: string | null;
+    transcript: string;
+  };
+  error?: { message?: string };
+};
+
 const TERMINAL_STATUSES = new Set<NormalizedSession["status"]>([
   "completed",
   "timed_out",
@@ -32,6 +42,8 @@ export default function Home() {
   const [targetUrl, setTargetUrl] = useState("https://demo-health.example");
   const [authorized, setAuthorized] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
@@ -62,6 +74,14 @@ export default function Home() {
   const selectedSession =
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
     snapshot.sessions[0];
+  const selectedPersona = snapshot.analysis?.personas.find(
+    (persona) => persona.id === selectedSession?.personaId,
+  );
+  const selectedNarration =
+    selectedSession?.finding?.frictionEvents[0]?.narratedObservation ??
+    selectedSession?.finding?.summary ??
+    selectedPersona?.introLine ??
+    "No persona finding is ready yet.";
 
   useEffect(() => {
     if (!liveMode || activeSessions.length === 0) return;
@@ -264,6 +284,56 @@ export default function Home() {
     }
   }
 
+  async function handleVoice() {
+    if (!selectedSession || !selectedPersona || voiceLoading) return;
+
+    setVoiceLoading(true);
+    setVoiceLine("Preparing persona voice...");
+
+    try {
+      const response = await fetch("/api/voice-reaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personaId: selectedPersona.id,
+          voiceSlot: selectedPersona.voiceSlot,
+          text: selectedNarration,
+        }),
+      });
+      const payload = (await response.json()) as VoiceReactionPayload;
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error?.message ?? "Voice generation failed.");
+      }
+
+      const audioSrc = payload.data.audioUrl
+        ? payload.data.audioUrl
+        : payload.data.audioBase64
+          ? `data:audio/mpeg;base64,${payload.data.audioBase64}`
+          : null;
+
+      if (audioSrc) {
+        await new Audio(audioSrc).play();
+        setVoiceLine(
+          payload.data.source === "gradium"
+            ? "Gradium voice played."
+            : "Voice audio played.",
+        );
+      } else {
+        speakWithBrowser(payload.data.transcript);
+        setVoiceLine("Gradium fallback: browser voice spoke the finding.");
+      }
+    } catch (error) {
+      speakWithBrowser(selectedNarration);
+      setVoiceLine(
+        error instanceof Error
+          ? `${error.message} Browser voice fallback used.`
+          : "Browser voice fallback used.",
+      );
+    } finally {
+      setVoiceLoading(false);
+    }
+  }
+
   return (
     <main className="min-h-screen px-5 py-6 text-ink md:px-8">
       <section className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[0.92fr_1.08fr]">
@@ -437,9 +507,22 @@ export default function Home() {
             {selectedSession?.personaId ?? "persona"} says:
           </h3>
           <p className="mt-4 text-lg leading-8 text-ink/75">
-            {selectedSession?.finding?.frictionEvents[0]?.narratedObservation ??
-              selectedSession?.finding?.summary}
+            {selectedNarration}
           </p>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <button
+              className="inline-flex min-h-10 items-center gap-2 rounded-md bg-ink px-4 text-sm font-black text-paper disabled:cursor-not-allowed disabled:opacity-55"
+              disabled={voiceLoading || !selectedPersona}
+              onClick={handleVoice}
+              type="button"
+            >
+              <Volume2 size={17} />
+              {voiceLoading ? "Voicing..." : "Speak Finding"}
+            </button>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
+              {voiceLine}
+            </p>
+          </div>
         </article>
 
         <article className="rounded-lg border border-ink/12 bg-white/70 p-5">
@@ -487,4 +570,14 @@ function stationClass(state: VisualAgentState): string {
 
 function variantClass(variant: number): string {
   return ["bg-grape", "bg-mint", "bg-brass", "bg-tomato"][variant] ?? "bg-grape";
+}
+
+function speakWithBrowser(text: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.9;
+  utterance.pitch = 1.05;
+  window.speechSynthesis.speak(utterance);
 }
