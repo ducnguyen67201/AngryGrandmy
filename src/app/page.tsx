@@ -153,6 +153,10 @@ export default function Home() {
   const generatedPersonaCount =
     (snapshot.analysis?.personas.length ?? testerCount) - customPersonaCount;
   const selectedTesterCount = Math.min(testerCount, generatedPersonaCount) + customPersonaCount;
+  const panelReady =
+    snapshot.phase === "revealing" &&
+    snapshot.sessions.length === 0 &&
+    Boolean(snapshot.analysis);
   const panelFeedback = getPanelFeedback({ snapshot, loading, dispatching, testerCount });
   const activeSessions = useMemo(
     () =>
@@ -185,6 +189,7 @@ export default function Home() {
     hotspotCount: visualHotspots.length,
     heatmapLine,
     liveMode,
+    panelReady,
   });
   const runGuidance = getRunGuidance({ snapshot, loading, dispatching });
   const panelReviewItems = useMemo(

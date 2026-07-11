@@ -9,11 +9,23 @@ export function getHeatmapDisplay({
   hotspotCount,
   heatmapLine,
   liveMode,
+  panelReady = false,
 }: {
   hotspotCount: number;
   heatmapLine: string;
   liveMode: boolean;
+  panelReady?: boolean;
 }): HeatmapDisplay {
+  if (panelReady && hotspotCount === 0 && !liveMode) {
+    return {
+      label: "Grandma preview",
+      countLabel: "Ready to dispatch",
+      hint:
+        "This is the preflight view of what your generated panel will inspect. If this looks right, dispatch the grandmas to collect real evidence.",
+      sourceLabel: "Preview only — live heatmap appears after H evidence.",
+    };
+  }
+
   if (hotspotCount === 0) {
     return {
       label: "Live heatmap",
