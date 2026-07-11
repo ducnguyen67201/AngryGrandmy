@@ -197,7 +197,7 @@ function ensureTrailingSlash(url: URL) {
   return new URL(url.href.endsWith("/") ? url.href : `${url.href}/`);
 }
 
-function vssHeaders() {
+function vssHeaders(): Record<string, string> {
   return process.env.NVIDIA_VSS_TOKEN
     ? { Authorization: `Bearer ${process.env.NVIDIA_VSS_TOKEN}` }
     : {};

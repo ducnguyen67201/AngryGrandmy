@@ -50,6 +50,14 @@ import type {
 import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
 import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
+import type { CalibrationSession } from "@/lib/calibration/calibration";
+import { calculateBehaviorOverlap } from "@/lib/calibration/calculate-overlap";
+import { createCalibratedPersona } from "@/lib/calibration/create-calibrated-persona";
+import {
+  evidenceTypesFromSession,
+  isUserSuppliedPersona,
+  mergeCalibratedPersona,
+} from "@/lib/calibration/lab-integration";
 import { getRunGuidance } from "@/lib/ui/run-guidance";
 import { buildPanelReviewItems } from "@/lib/ui/panel-review";
 import { getLiveViewportPresentation } from "@/lib/ui/live-viewport";
@@ -191,6 +199,8 @@ export default function Home() {
   const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
   const [cursorAnimationTick, setCursorAnimationTick] = useState(0);
+  const [activeCalibration, setActiveCalibration] = useState<CalibrationSession | null>(null);
+  const [regressionLine, setRegressionLine] = useState("Guarded regression job ready.");
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
@@ -210,7 +220,7 @@ export default function Home() {
   sessionsRef.current = snapshot.sessions;
   const liveMode = snapshot.phase === "running";
   const customPersonaCount =
-    snapshot.analysis?.personas.filter((persona) => persona.id.startsWith("custom-")).length ?? 0;
+    snapshot.analysis?.personas.filter(isUserSuppliedPersona).length ?? 0;
   const generatedPersonaCount =
     (snapshot.analysis?.personas.length ?? testerCount) - customPersonaCount;
   const selectedTesterCount = Math.min(testerCount, generatedPersonaCount) + customPersonaCount;
@@ -322,6 +332,21 @@ export default function Home() {
     snapshot.sessions.find((session) => session.personaId === selectedPersona?.id) ??
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
     snapshot.sessions[0];
+  const calibratedRunSession = activeCalibration
+    ? snapshot.sessions.find(
+        (session) => session.personaId === `calibrated-${activeCalibration.id}`,
+      )
+    : undefined;
+  const behaviorOverlap = useMemo(
+    () =>
+      activeCalibration
+        ? calculateBehaviorOverlap(
+            activeCalibration.evidence,
+            evidenceTypesFromSession(calibratedRunSession),
+          )
+        : null,
+    [activeCalibration, calibratedRunSession],
+  );
   const viewportFrames = useMemo(
     () => getPersonaViewportFrames(liveEvents, selectedPersona?.id),
     [liveEvents, selectedPersona?.id],
@@ -760,6 +785,41 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    const calibrationId = new URLSearchParams(window.location.search).get(
+      "calibration",
+    );
+    if (!calibrationId) return;
+    let cancelled = false;
+
+    fetch(`/api/calibrations/${encodeURIComponent(calibrationId)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as { data?: CalibrationSession };
+        if (!response.ok || !payload.data || payload.data.status !== "approved") {
+          throw new Error("Calibration is missing or not approved.");
+        }
+        if (!cancelled) {
+          setActiveCalibration(payload.data);
+          setTargetUrl(payload.data.targetUrl);
+          setObjective(payload.data.objective);
+          setStatusLine(
+            `${payload.data.testerName}'s approved behavioral proxy is ready to join the panel.`,
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStatusLine("Could not load the approved calibration profile.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const queryState = parseLabSearchParams(window.location.search);
     const hasQueryState = Object.keys(queryState).length > 0;
     const saved = parsePersistedLabState(
@@ -799,7 +859,12 @@ export default function Home() {
         objective,
         testerCount,
       });
-      const nextUrl = `${window.location.pathname}${search}${window.location.hash}`;
+      const params = new URLSearchParams(search);
+      const calibrationId =
+        activeCalibration?.id ??
+        new URLSearchParams(window.location.search).get("calibration");
+      if (calibrationId) params.set("calibration", calibrationId);
+      const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
       const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       if (nextUrl !== currentUrl) {
         window.history.replaceState(window.history.state, "", nextUrl);
@@ -807,7 +872,7 @@ export default function Home() {
     } catch {
       // Keep the last valid share URL while the form is temporarily incomplete.
     }
-  }, [objective, persistenceHydrated, targetUrl, testerCount]);
+  }, [activeCalibration?.id, objective, persistenceHydrated, targetUrl, testerCount]);
 
   useEffect(() => {
     if (!persistenceHydrated) return;
@@ -1235,15 +1300,23 @@ export default function Home() {
       }
 
       const now = new Date().toISOString();
+      const plannedAnalysis = activeCalibration
+        ? mergeCalibratedPersona(
+            payload.data.analysis,
+            createCalibratedPersona(activeCalibration),
+          )
+        : payload.data.analysis;
       setSnapshot((current) => ({
         ...current,
         id: `plan-${Date.now()}`,
         phase: "revealing",
         url: targetUrl,
         objective,
-        analysis: payload.data?.analysis ?? current.analysis,
+        analysis: plannedAnalysis,
         sessions: [],
-        selectedPersonaId: payload.data?.analysis?.personas[0]?.id ?? null,
+        selectedPersonaId: activeCalibration
+          ? `calibrated-${activeCalibration.id}`
+          : plannedAnalysis.personas[0]?.id ?? null,
         report: null,
         error: null,
         createdAt: now,
@@ -1252,7 +1325,7 @@ export default function Home() {
       setPersonasAccepted(false);
       setLocalizedHotspots(null);
       setStatusLine(
-        `Generated ${payload.data.analysis.personas.length} personas with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
+        `Generated ${plannedAnalysis.personas.length} personas${activeCalibration ? ", including the approved behavioral proxy," : ""} with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
       );
     } catch (error) {
       setStatusLine(error instanceof Error ? error.message : "Could not generate a persona plan.");
@@ -1268,15 +1341,11 @@ export default function Home() {
     }
     setDispatching(true);
     const beforeLaunch = snapshot;
-    const customPersona = snapshot.analysis?.personas.find((persona) =>
-      persona.id.startsWith("custom-"),
-    );
+    const customPersona = snapshot.analysis?.personas.find(isUserSuppliedPersona);
     const generatedPersonas = snapshot.analysis.personas
-      .filter((persona) => !persona.id.startsWith("custom-"))
+      .filter((persona) => !isUserSuppliedPersona(persona))
       .slice(0, testerCount);
-    const customPersonas = snapshot.analysis.personas.filter((persona) =>
-      persona.id.startsWith("custom-"),
-    );
+    const customPersonas = snapshot.analysis.personas.filter(isUserSuppliedPersona);
     const personasToLaunch = [...generatedPersonas, ...customPersonas];
     const startedAt = new Date().toISOString();
     const launchingSessions: NormalizedSession[] = personasToLaunch.map(
@@ -1375,7 +1444,7 @@ export default function Home() {
       setSnapshot((current) => {
         if (!current.analysis) return current;
         const generatedPersonas = current.analysis.personas.filter(
-          (persona) => !persona.id.startsWith("custom-"),
+          (persona) => !isUserSuppliedPersona(persona),
         );
         return {
           ...current,
@@ -1539,6 +1608,29 @@ export default function Home() {
     const response = await fetch("/api/report?fixJob=1", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ runId:snapshot.id, sessionId:selectedSession.sessionId, personaId:selectedPersona.id, personaName:selectedPersona.displayName, productUrl:snapshot.url, objective:snapshot.objective ?? objective, frustrationEventId:requestId, frustration:selectedFriction }) });
     if (response.ok) { setFixRequestIds((current) => new Set(current).add(requestId)); setStatusLine(`Fix proposal job queued for ${selectedPersona.displayName}.`); }
     else setStatusLine("Could not start the fix proposal job.");
+  }
+
+  async function handleQueueCalibratedRegression() {
+    if (!activeCalibration || !runComplete) return;
+    setRegressionLine("Queueing a proposal-only NemoClaw regression job...");
+    try {
+      const response = await fetch(
+        `/api/calibrations/${encodeURIComponent(activeCalibration.id)}/regression`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ candidateRunId: snapshot.id }),
+        },
+      );
+      if (!response.ok) throw new Error("Regression job was not accepted.");
+      setRegressionLine(
+        "Guarded regression queued: allowed host only, read-only investigation, proposal-only output.",
+      );
+    } catch (error) {
+      setRegressionLine(
+        error instanceof Error ? error.message : "Could not queue the regression job.",
+      );
+    }
   }
 
   if (false) {
@@ -2444,6 +2536,9 @@ export default function Home() {
             <button className="analyze-button" disabled={loading || dispatching || !authorized} type="submit">
               <Sparkles size={16} /> {loading ? "Finding target users…" : "Suggest target users"}
             </button>
+            <a className="mt-3 inline-flex items-center gap-2 text-sm font-black text-brass" href="/calibrate">
+              <ShieldCheck size={15} /> Calibrate from a real human session
+            </a>
           </form>
         </section>
         ) : null}
@@ -2457,10 +2552,17 @@ export default function Home() {
                 </div>
               </div>
 
+              {activeCalibration ? (
+                <div className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+                  <b>{activeCalibration.testerName}&apos;s behavioral proxy is attached.</b>{" "}
+                  It contains only the rules approved during human review and will run alongside the generated panel.
+                </div>
+              ) : null}
+
               <div className="persona-cards" role="group" aria-label="Suggested tester roster">
                 {snapshot.analysis?.personas.map((persona, index) => (
                   <button
-                    aria-label={`${persona.displayName}, ${index < testerCount || persona.id.startsWith("custom-") ? "included" : "standby"}. Preview persona`}
+                    aria-label={`${persona.displayName}, ${index < testerCount || isUserSuppliedPersona(persona) ? "included" : "standby"}. Preview persona`}
                     aria-pressed={snapshot.selectedPersonaId === persona.id}
                     className={snapshot.selectedPersonaId === persona.id ? "is-selected" : ""}
                     key={persona.id}
@@ -2474,13 +2576,13 @@ export default function Home() {
                       <b>{persona.displayName}</b>
                       <small>{persona.tagline} · {persona.digitalConfidence} confidence</small>
                     </span>
-                    <em>{index < testerCount || persona.id.startsWith("custom-") ? <><Check size={13} /> Included</> : "Standby"}</em>
+                    <em>{index < testerCount || isUserSuppliedPersona(persona) ? <><Check size={13} /> Included</> : "Standby"}</em>
                   </button>
                 ))}
               </div>
 
               <PersonaBuilder
-                disabled={loading || dispatching || liveMode}
+                disabled={loading || dispatching || liveMode || Boolean(activeCalibration)}
                 onCreate={handleCreatePersona}
               />
 
@@ -2576,6 +2678,33 @@ export default function Home() {
                 );
               })}
             </div>
+
+            {activeCalibration ? (
+              <section className="mb-5 grid gap-4 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950 md:grid-cols-[1fr_auto] md:items-center">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.16em]">Human calibration overlap</p>
+                  <p className="mt-2 text-2xl font-black">
+                    {behaviorOverlap?.score === null || behaviorOverlap?.score === undefined
+                      ? "Waiting for calibrated evidence"
+                      : `${behaviorOverlap.score}% observable overlap`}
+                  </p>
+                  <p className="mt-2 text-sm leading-6">
+                    {behaviorOverlap?.totalObserved
+                      ? `${behaviorOverlap.reproducedCount}/${behaviorOverlap.totalObserved} observed friction types reproduced. This measures evidence overlap, not personal similarity.`
+                      : "The calibrated H session must finish before overlap can be measured."}
+                  </p>
+                  <small className="mt-2 block font-semibold">{regressionLine}</small>
+                </div>
+                <button
+                  className="rounded-xl bg-[#172018] px-4 py-3 text-sm font-black text-white disabled:opacity-40"
+                  disabled={!runComplete || !calibratedRunSession?.finding}
+                  onClick={handleQueueCalibratedRegression}
+                  type="button"
+                >
+                  <Bot className="mr-2 inline" size={15} /> Queue guarded regression
+                </button>
+              </section>
+            ) : null}
 
             <div className="live-layout">
               <div className="agent-stage">
