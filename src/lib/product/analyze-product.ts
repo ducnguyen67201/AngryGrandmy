@@ -1,42 +1,355 @@
-import { demoAnalysis } from "@/lib/fixtures/demo-run";
-import type { AnalyzeRequest, ProductAnalysis } from "@/lib/schemas/run";
+import type {
+  AnalyzeRequest,
+  PersonaScenario,
+  ProductAnalysis,
+} from "@/lib/schemas/run";
+import { ProductAnalysisSchema } from "@/lib/schemas/run";
+
+type ProductDomain = {
+  category: string;
+  taskNoun: string;
+  primaryAction: string;
+  safeStopPoint: string;
+  trustRisk: string;
+  jargonRisk: string;
+  irreversibleAction: string;
+  likelyDataRequest: string;
+  expectedStepBudget: number;
+};
+
+type PersonaSeed = {
+  id: string;
+  displayName: string;
+  tagline: string;
+  digitalConfidence: PersonaScenario["digitalConfidence"];
+  contextTemplate: string;
+  behaviors: string[];
+  accessibilityContext: string[];
+  trustBoundariesTemplate: string[];
+  taskAngle: string;
+  expectedStepBudgetOffset: number;
+  introTemplate: string;
+  voiceSlot: 0 | 1 | 2 | 3;
+  visualVariant: 0 | 1 | 2 | 3;
+};
+
+const DOMAINS: Array<{ match: RegExp; value: ProductDomain }> = [
+  {
+    match: /doctor|clinic|health|appointment|patient|medical|care|dental|therapy|pharma|hospital/i,
+    value: {
+      category: "healthcare scheduling",
+      taskNoun: "appointment path",
+      primaryAction: "start the right care or appointment request",
+      safeStopPoint:
+        "Stop before submitting patient details, insurance details, payment, or a real appointment request.",
+      trustRisk:
+        "private health, insurance, or account information requested before the user understands why",
+      jargonRisk: "clinical or insurance wording",
+      irreversibleAction: "booking a real visit",
+      likelyDataRequest: "patient, insurance, or date-of-birth information",
+      expectedStepBudget: 12,
+    },
+  },
+  {
+    match: /checkout|cart|shop|buy|order|store|commerce|product|retail|market/i,
+    value: {
+      category: "commerce checkout",
+      taskNoun: "purchase path",
+      primaryAction: "find the right product and reach the pre-purchase review step",
+      safeStopPoint:
+        "Stop before placing an order, entering payment details, saving a card, or confirming purchase.",
+      trustRisk: "shipping, return, or payment terms hidden until late in checkout",
+      jargonRisk: "promotion, subscription, or fulfillment wording",
+      irreversibleAction: "placing a real order",
+      likelyDataRequest: "address, payment, or account information",
+      expectedStepBudget: 11,
+    },
+  },
+  {
+    match: /bank|finance|loan|insurance|tax|payment|invest|credit|mortgage/i,
+    value: {
+      category: "financial services",
+      taskNoun: "account or quote path",
+      primaryAction: "understand the safest next step without exposing sensitive financial data",
+      safeStopPoint:
+        "Stop before entering SSN, bank credentials, payment data, credit checks, or binding applications.",
+      trustRisk: "financial or identity information requested before the value is clear",
+      jargonRisk: "legal, rate, fee, or underwriting wording",
+      irreversibleAction: "submitting a financial application",
+      likelyDataRequest: "identity, income, banking, or payment information",
+      expectedStepBudget: 13,
+    },
+  },
+  {
+    match: /book|reservation|hotel|flight|travel|ticket|restaurant|event|rental/i,
+    value: {
+      category: "booking workflow",
+      taskNoun: "reservation path",
+      primaryAction: "compare options and reach the reservation review step",
+      safeStopPoint:
+        "Stop before confirming a booking, sending a real message, payment, or cancellation-risk action.",
+      trustRisk: "availability, cancellation, or fee details hidden until confirmation",
+      jargonRisk: "policy, availability, or fare wording",
+      irreversibleAction: "confirming a real reservation",
+      likelyDataRequest: "guest, contact, payment, or schedule information",
+      expectedStepBudget: 12,
+    },
+  },
+  {
+    match: /saas|software|dashboard|platform|api|developer|workspace|crm|analytics|project/i,
+    value: {
+      category: "software onboarding",
+      taskNoun: "onboarding path",
+      primaryAction: "understand the product and reach a safe setup or demo step",
+      safeStopPoint:
+        "Stop before inviting teammates, connecting accounts, changing production data, or sending messages.",
+      trustRisk: "permissions or integrations requested before the user understands consequences",
+      jargonRisk: "technical setup, role, integration, or workspace wording",
+      irreversibleAction: "changing real workspace data",
+      likelyDataRequest: "account, workspace, permission, or integration information",
+      expectedStepBudget: 10,
+    },
+  },
+];
+
+const FALLBACK_DOMAIN: ProductDomain = {
+  category: "consumer web workflow",
+  taskNoun: "primary task path",
+  primaryAction: "complete the main user task safely",
+  safeStopPoint:
+    "Stop before payment, account creation, booking confirmation, private data submission, or any irreversible action.",
+  trustRisk: "personal information requested before the user understands the next step",
+  jargonRisk: "product-specific wording",
+  irreversibleAction: "submitting a real request",
+  likelyDataRequest: "contact, account, or personal information",
+  expectedStepBudget: 11,
+};
+
+const PERSONA_SEEDS: [PersonaSeed, PersonaSeed, PersonaSeed, PersonaSeed] = [
+  {
+    id: "linda",
+    displayName: "Linda",
+    tagline: "Careful first-time visitor",
+    digitalConfidence: "low",
+    contextTemplate:
+      "Linda is an older adult trying to use {productName} for the first time. She reads slowly, worries about clicking the wrong thing, and needs plain confirmation before moving forward.",
+    behaviors: [
+      "Reads button labels literally and avoids ambiguous calls to action.",
+      "Pauses when the page uses internal vocabulary or unexplained icons.",
+      "Backtracks once if the next step feels binding.",
+    ],
+    accessibilityContext: [
+      "Uses browser zoom.",
+      "Needs strong labels and visible focus/selection feedback.",
+    ],
+    trustBoundariesTemplate: [
+      "Will not provide {likelyDataRequest} before understanding why it is needed.",
+      "Will stop before {irreversibleAction}.",
+    ],
+    taskAngle: "Find the safest way to {primaryAction}",
+    expectedStepBudgetOffset: 1,
+    introTemplate:
+      "I am Linda. I want to {primaryAction}, but I need to know nothing real is being submitted yet.",
+    voiceSlot: 0,
+    visualVariant: 0,
+  },
+  {
+    id: "rosa",
+    displayName: "Rosa",
+    tagline: "Caregiver scanning on mobile",
+    digitalConfidence: "medium",
+    contextTemplate:
+      "Rosa is helping a family member use {productName}. She is on a small screen, scanning quickly, and needs the page to say what information is required next.",
+    behaviors: [
+      "Skims headings before reading details.",
+      "Uses navigation or search if the first path is unclear.",
+      "Looks for reassurance that she can help someone else.",
+    ],
+    accessibilityContext: [
+      "Simulates narrow viewport scanning.",
+      "Needs important guidance near the primary action.",
+    ],
+    trustBoundariesTemplate: [
+      "Will stop if asked for another person's private data without explanation.",
+      "Will stop before {irreversibleAction}.",
+    ],
+    taskAngle:
+      "Help someone else {primaryAction} and identify what information will be needed",
+    expectedStepBudgetOffset: 0,
+    introTemplate:
+      "I am Rosa. I am helping someone else, so I need the site to make the next step obvious.",
+    voiceSlot: 1,
+    visualVariant: 1,
+  },
+  {
+    id: "mei",
+    displayName: "Mei",
+    tagline: "Cautious comparison shopper",
+    digitalConfidence: "medium",
+    contextTemplate:
+      "Mei compares options carefully before trusting {productName}. She is comfortable online but abandons flows when fees, policies, or consequences are vague.",
+    behaviors: [
+      "Opens secondary details before committing.",
+      "Compares labels and examples before choosing an option.",
+      "Stops when trust or cost information appears late.",
+    ],
+    accessibilityContext: [
+      "Reads slowly.",
+      "Needs plain-language examples under similar-looking choices.",
+    ],
+    trustBoundariesTemplate: [
+      "Will not continue if {trustRisk}.",
+      "Will stop before {irreversibleAction}.",
+    ],
+    taskAngle: "Compare the available options and then {primaryAction}",
+    expectedStepBudgetOffset: 3,
+    introTemplate:
+      "I am Mei. I need to compare the choices before I click anything serious.",
+    voiceSlot: 2,
+    visualVariant: 2,
+  },
+  {
+    id: "joan",
+    displayName: "Joan",
+    tagline: "Low-confidence desktop user",
+    digitalConfidence: "low",
+    contextTemplate:
+      "Joan uses {productName} from a desktop computer. She recognizes common words but not product-specific terms, unlabeled icons, or subtle visual state changes.",
+    behaviors: [
+      "Ignores unlabeled icons.",
+      "Gives up after two confusing loops.",
+      "Looks for a phone-like or human-help backup path.",
+    ],
+    accessibilityContext: [
+      "Reduced fine motor confidence.",
+      "Avoids dense menus and tiny controls.",
+    ],
+    trustBoundariesTemplate: [
+      "Will not create an account just to understand the basic path.",
+      "Will stop before {irreversibleAction}.",
+    ],
+    taskAngle:
+      "Try to {primaryAction} without relying on unlabeled icons or hidden menus",
+    expectedStepBudgetOffset: 2,
+    introTemplate:
+      "I am Joan. If it is only an icon, I probably will not know whether it is safe to press.",
+    voiceSlot: 3,
+    visualVariant: 3,
+  },
+];
 
 export function buildProductAnalysis(request: AnalyzeRequest): ProductAnalysis {
   const url = new URL(request.url);
   const productName = titleFromHost(url.hostname);
-  const objective =
-    request.objective?.trim() || demoAnalysis.personas[0].task;
-  const category = inferCategory(`${url.hostname} ${objective}`);
-
-  return {
-    ...demoAnalysis,
+  const objective = normalizeObjective(request.objective, productName);
+  const domain = inferDomain(`${url.hostname} ${objective}`);
+  const primaryAction = objective || domain.primaryAction;
+  const flowName = toSentenceCase(primaryAction);
+  const analysis: ProductAnalysis = {
     productName,
-    productCategory: category,
-    summary: `A ${category} product where a low-confidence user needs to complete: ${objective}`,
+    productCategory: domain.category,
+    summary: `${productName} appears to be a ${domain.category} product. GrannySmith will test whether low-confidence users can ${primaryAction} without crossing a real-world commitment boundary.`,
     primaryFlows: [
       {
-        name: objective,
-        goal: `Complete the task "${objective}" without irreversible submission.`,
-        safeStopPoint:
-          "Stop before payment, account creation, purchase, booking confirmation, private data submission, or any irreversible action.",
+        name: flowName,
+        goal: `Find and follow the path to ${primaryAction}.`,
+        safeStopPoint: domain.safeStopPoint,
       },
     ],
-    personas: demoAnalysis.personas.map((persona, index) => ({
-      ...persona,
-      task: personalizeTask(persona.task, objective, index),
-      successCriteria: [
-        `Finds the path for: ${objective}`,
-        "Reaches the safe stop point or clearly identifies why they cannot continue.",
-      ],
-    })) as ProductAnalysis["personas"],
+    globalSafetyBoundaries: [
+      "Use synthetic information only.",
+      domain.safeStopPoint,
+      "Do not submit purchases, bookings, applications, account changes, private messages, credentials, or sensitive personal data.",
+      "Prefer observing and reporting friction over completing any irreversible action.",
+    ],
+    personas: PERSONA_SEEDS.map((seed) =>
+      buildPersona(seed, productName, primaryAction, domain),
+    ) as ProductAnalysis["personas"],
+  };
+
+  return ProductAnalysisSchema.parse(analysis);
+}
+
+function buildPersona(
+  seed: PersonaSeed,
+  productName: string,
+  primaryAction: string,
+  domain: ProductDomain,
+): PersonaScenario {
+  const interpolate = (value: string) =>
+    value
+      .replaceAll("{productName}", productName)
+      .replaceAll("{primaryAction}", primaryAction)
+      .replaceAll("{likelyDataRequest}", domain.likelyDataRequest)
+      .replaceAll("{irreversibleAction}", domain.irreversibleAction)
+      .replaceAll("{trustRisk}", domain.trustRisk)
+      .replaceAll("{jargonRisk}", domain.jargonRisk);
+
+  const task = `${interpolate(seed.taskAngle)}. Stop at: ${domain.safeStopPoint}`;
+  const persona: PersonaScenario = {
+    id: seed.id,
+    displayName: seed.displayName,
+    tagline: seed.tagline,
+    context: interpolate(seed.contextTemplate),
+    digitalConfidence: seed.digitalConfidence,
+    behaviors: seed.behaviors,
+    accessibilityContext: seed.accessibilityContext,
+    trustBoundaries: seed.trustBoundariesTemplate.map(interpolate),
+    task,
+    successCriteria: [
+      `Identifies the correct ${domain.taskNoun}.`,
+      `Understands what information or commitment is required next.`,
+      "Stops before the defined safety boundary.",
+    ],
+    stopConditions: [
+      domain.safeStopPoint,
+      `Any request for ${domain.likelyDataRequest} before the reason is clear.`,
+      `Any step that appears to risk ${domain.irreversibleAction}.`,
+    ],
+    expectedStepBudget: clampStepBudget(
+      domain.expectedStepBudget + seed.expectedStepBudgetOffset,
+    ),
+    introLine: interpolate(seed.introTemplate).slice(0, 240),
+    voiceSlot: seed.voiceSlot,
+    visualVariant: seed.visualVariant,
+  };
+
+  return {
+    ...persona,
+    dispatchInstruction: buildDispatchInstruction(
+      productName,
+      domain,
+      persona,
+    ),
   };
 }
 
+function buildDispatchInstruction(
+  productName: string,
+  domain: ProductDomain,
+  persona: PersonaScenario,
+): string {
+  return [
+    `Run a synthetic usability test for ${productName} as ${persona.displayName}.`,
+    `Persona context: ${persona.context}`,
+    `Task: ${persona.task}`,
+    `Simulated behaviors: ${persona.behaviors.join("; ")}`,
+    `Accessibility context: ${persona.accessibilityContext.join("; ")}`,
+    `Trust boundaries: ${persona.trustBoundaries.join("; ")}`,
+    `Success criteria: ${persona.successCriteria.join("; ")}`,
+    `Stop conditions: ${persona.stopConditions.join("; ")}`,
+    `Risk to watch for: ${domain.jargonRisk}; ${domain.trustRisk}.`,
+    "Do not submit real data, real bookings, real purchases, real messages, credentials, or irreversible actions.",
+    "When finished, report completion status, evidence, friction events, visible evidence, and concrete recommendations.",
+  ].join("\n");
+}
+
 function titleFromHost(hostname: string): string {
-  const clean = hostname
-    .replace(/^www\./, "")
-    .split(".")
-    .filter(Boolean)[0] ?? "Target Product";
+  const clean =
+    hostname
+      .replace(/^www\./, "")
+      .split(".")
+      .filter(Boolean)[0] ?? "Target Product";
 
   return clean
     .split(/[-_]/)
@@ -45,30 +358,27 @@ function titleFromHost(hostname: string): string {
     .join(" ");
 }
 
-function inferCategory(text: string): string {
-  const lower = text.toLowerCase();
-  if (/doctor|clinic|health|appointment|patient|medical/.test(lower)) {
-    return "healthcare scheduling";
-  }
-  if (/checkout|cart|shop|buy|order|store|commerce/.test(lower)) {
-    return "commerce checkout";
-  }
-  if (/bank|finance|loan|insurance|tax|payment/.test(lower)) {
-    return "financial services";
-  }
-  if (/book|reservation|hotel|flight|travel|ticket/.test(lower)) {
-    return "booking workflow";
-  }
-  return "consumer web workflow";
+function normalizeObjective(objective: string | undefined, productName: string) {
+  const trimmed = objective?.trim().replace(/\s+/g, " ");
+  if (!trimmed) return "";
+
+  return trimmed
+    .replace(/^i want to\s+/i, "")
+    .replace(/^user wants to\s+/i, "")
+    .replace(/^help me\s+/i, "")
+    .replaceAll(productName, "the product");
 }
 
-function personalizeTask(baseTask: string, objective: string, index: number) {
-  const suffixes = [
-    "without accidentally committing to anything",
-    "while understanding what information is required next",
-    "while comparing confusing options before continuing",
-    "without relying on unlabeled icons or tiny controls",
-  ];
+function inferDomain(text: string): ProductDomain {
+  return DOMAINS.find((domain) => domain.match.test(text))?.value ?? FALLBACK_DOMAIN;
+}
 
-  return `${objective}; ${suffixes[index] ?? baseTask}.`;
+function toSentenceCase(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "Primary workflow";
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function clampStepBudget(value: number) {
+  return Math.max(4, Math.min(30, value));
 }

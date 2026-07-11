@@ -99,6 +99,14 @@ function buildPersonaPrompt(
   analysis: ProductAnalysis,
   persona: PersonaScenario,
 ) {
+  if (persona.dispatchInstruction) {
+    return [
+      persona.dispatchInstruction,
+      `Target URL: ${request.url}`,
+      `Global safety boundaries: ${analysis.globalSafetyBoundaries.join("; ")}`,
+    ].join("\n\n");
+  }
+
   return [
     `You are running a synthetic usability test for ${analysis.productName}.`,
     `Target URL: ${request.url}`,
