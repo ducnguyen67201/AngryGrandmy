@@ -24,9 +24,12 @@ The journey was derived from the demo request: as a researcher watching a live o
 
 - RED checkpoint: `906f3e6 test: specify evidence-aware agent cursor`
 - GREEN checkpoint: `09c9c93 feat: animate agent cursor over evidence`
+- Legacy replay RED checkpoint: `c6546b8 test: reproduce missing legacy replay cursor`
+- Legacy replay GREEN checkpoint: `7a6836f fix: always show cursor during legacy replay`
 
 ## Display contract
 
 - Green label: position reported by H for the selected persona.
-- Purple label: estimated from the nearest heatmap evidence for an older run.
+- Purple label: explicitly estimated for an older run without H pointer coordinates.
 - Cursor transitions smoothly between frame positions and does not intercept user input.
+- Legacy runs with no coordinate evidence receive a bounded moving demo path, explicitly labeled estimated.
