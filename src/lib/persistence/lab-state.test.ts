@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
+  buildLabSearchParams,
   buildPersistedLabState,
+  parseLabSearchParams,
   parsePersistedLabState,
   PERSISTED_LAB_STATE_VERSION,
 } from "./lab-state";
@@ -45,5 +47,27 @@ describe("lab state persistence", () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it("round-trips a shareable lab configuration through URL parameters", () => {
+    const search = buildLabSearchParams({
+      targetUrl: "https://example.com/checkout?currency=usd",
+      objective: "Reach order review without placing the order.",
+      testerCount: 3,
+    });
+
+    expect(parseLabSearchParams(search)).toEqual({
+      targetUrl: "https://example.com/checkout?currency=usd",
+      objective: "Reach order review without placing the order.",
+      testerCount: 3,
+    });
+  });
+
+  it("ignores unsafe or out-of-range URL configuration", () => {
+    expect(
+      parseLabSearchParams(
+        "?url=javascript%3Aalert(1)&objective=%20%20&testers=9",
+      ),
+    ).toEqual({});
   });
 });

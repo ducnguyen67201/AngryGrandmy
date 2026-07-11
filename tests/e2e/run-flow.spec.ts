@@ -1,8 +1,16 @@
 import { expect, test } from "playwright/test";
 
+test("keeps the marketing homepage separate from the usability lab", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: /see your product through their eyes/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /start a usability test/i })).toHaveAttribute("href", "/lab");
+  await expect(page.getByLabel("Product URL")).toHaveCount(0);
+});
+
 test("moves through exclusive setup, persona, and replay scenes", async ({ page }) => {
   test.setTimeout(75_000);
-  await page.goto("/");
+  await page.goto("/lab");
   await page.evaluate(() => window.localStorage.clear());
   await page.reload();
 
@@ -44,7 +52,7 @@ test("moves through exclusive setup, persona, and replay scenes", async ({ page 
 test("keeps replay evidence compact on mobile", async ({ page }) => {
   test.setTimeout(75_000);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/lab");
   await page.evaluate(() => window.localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "Checkout" }).click();
