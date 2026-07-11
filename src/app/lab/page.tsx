@@ -42,11 +42,13 @@ import {
   shouldRestorePersistedRun,
 } from "@/lib/persistence/lab-state";
 import {
+  DEFAULT_TESTER_COUNT,
   getDispatchedPersonas,
   isTesterCount,
   TESTER_COUNT_OPTIONS,
   type TesterCount,
 } from "@/lib/run/tester-count";
+import { calculateUsabilityReport } from "@/lib/scoring/calculate-report";
 import type {
   NormalizedSession,
   RunSnapshot,
@@ -172,6 +174,7 @@ const DEMO_PRESETS = [
 
 const DEFAULT_OBJECTIVE =
   "Find the primary user workflow and stop before an irreversible action.";
+const DEFAULT_TARGET_URL = "https://demo-health.example";
 const LAUNCHING_SESSION_PREFIX = "launching-";
 const LIVE_EVENT_POLL_INTERVAL_MS = 1_800;
 const SILENT_AUDIO_DATA_URL =
@@ -179,10 +182,10 @@ const SILENT_AUDIO_DATA_URL =
 
 export default function Home() {
   const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createInitialRun());
-  const [targetUrl, setTargetUrl] = useState("https://demo-health.example");
+  const [targetUrl, setTargetUrl] = useState(DEFAULT_TARGET_URL);
   const [objective, setObjective] = useState(DEFAULT_OBJECTIVE);
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const [testerCount, setTesterCount] = useState<TesterCount>(4);
+  const [testerCount, setTesterCount] = useState<TesterCount>(DEFAULT_TESTER_COUNT);
   const [authorized, setAuthorized] = useState(true);
   const [personasAccepted, setPersonasAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -925,7 +928,27 @@ export default function Home() {
       window.localStorage.getItem(PERSISTED_LAB_STATE_KEY),
     );
 
-    if (saved && shouldRestorePersistedRun(saved, queryState)) {
+    if (queryState.demoReplay) {
+      const demoSnapshot = createDemoShareRun({
+        targetUrl: queryState.targetUrl ?? DEFAULT_TARGET_URL,
+        objective: queryState.objective ?? DEFAULT_OBJECTIVE,
+        testerCount: queryState.testerCount ?? DEFAULT_TESTER_COUNT,
+      });
+      setSnapshot(demoSnapshot);
+      setTargetUrl(demoSnapshot.url);
+      setObjective(demoSnapshot.objective ?? DEFAULT_OBJECTIVE);
+      setSelectedPresetId(null);
+      setTesterCount(queryState.testerCount ?? DEFAULT_TESTER_COUNT);
+      setAuthorized(true);
+      setPersonasAccepted(true);
+      setLocalizedHotspots(null);
+      setLiveEvents([]);
+      setReplayFrameIndex(null);
+      setReplayPlaying(false);
+      setStatusLine("Demo replay loaded from the URL. Click replay or enable voice to present it.");
+      setPersistenceLine("Loaded demo replay evidence from the URL.");
+      setHasRestoredSavedRun(false);
+    } else if (saved && shouldRestorePersistedRun(saved, queryState)) {
       setSnapshot(saved.snapshot);
       setTargetUrl(saved.targetUrl);
       setObjective(saved.objective);
@@ -963,6 +986,9 @@ export default function Home() {
         activeCalibration?.id ??
         new URLSearchParams(window.location.search).get("calibration");
       if (calibrationId) params.set("calibration", calibrationId);
+      const currentParams = new URLSearchParams(window.location.search);
+      if (currentParams.get("demo") === "1") params.set("demo", "1");
+      if (currentParams.get("replay") === "1") params.set("replay", "1");
       const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
       const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       if (nextUrl !== currentUrl) {
@@ -3176,6 +3202,37 @@ function createInitialRun(): RunSnapshot {
     selectedPersonaId: null,
     report: null,
     error: null,
+  };
+}
+
+function createDemoShareRun({
+  targetUrl,
+  objective,
+  testerCount,
+}: {
+  targetUrl: string;
+  objective: string;
+  testerCount: TesterCount;
+}): RunSnapshot {
+  const demo = createDemoRun({
+    id: "demo-share-run",
+    url: targetUrl,
+    objective,
+  });
+  const sessions = demo.sessions.slice(0, testerCount);
+  const expectedBudgets = Object.fromEntries(
+    (demo.analysis?.personas ?? []).map((persona) => [
+      persona.id,
+      persona.expectedStepBudget,
+    ]),
+  );
+
+  return {
+    ...demo,
+    sessions,
+    selectedPersonaId: sessions[0]?.personaId ?? demo.selectedPersonaId,
+    report: calculateUsabilityReport(sessions, expectedBudgets),
+    updatedAt: new Date().toISOString(),
   };
 }
 
