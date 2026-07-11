@@ -4,15 +4,15 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
-  buildJudgeSummary,
-  buildMarkdownReport,
-  buildReportJson,
-} from "@/lib/report/export-report";
-import {
   buildVisualHotspots,
   summarizeHotspots,
   type VisualHotspot,
 } from "@/lib/hotspots/build-hotspots";
+import {
+  buildJudgeSummary,
+  buildMarkdownReport,
+  buildReportJson,
+} from "@/lib/report/export-report";
 import type {
   NormalizedSession,
   RunSnapshot,
@@ -147,8 +147,11 @@ export default function Home() {
     () => buildVisualHotspots(snapshot.sessions, snapshot.analysis),
     [snapshot.analysis, snapshot.sessions],
   );
-  const hotspots = localizedHotspots ?? fallbackHotspots;
-  const hotspotSummary = useMemo(() => summarizeHotspots(hotspots), [hotspots]);
+  const visualHotspots = localizedHotspots ?? fallbackHotspots;
+  const hotspotCounts = useMemo(
+    () => summarizeHotspots(visualHotspots),
+    [visualHotspots],
+  );
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
   );
@@ -690,6 +693,9 @@ export default function Home() {
             <div className="grid h-full min-h-[520px] grid-cols-2 gap-3 p-4 pt-24">
               {snapshot.analysis?.personas.map((persona) => {
                 const session = sessionsByPersona.get(persona.id);
+                const personaHotspots = visualHotspots.filter(
+                  (hotspot) => hotspot.personaId === persona.id,
+                );
 
                 return (
                 <button
@@ -714,33 +720,10 @@ export default function Home() {
                     <div className="m-2 h-3 rounded bg-mint/70" />
                     <div className="mx-2 mt-3 h-2 rounded bg-white/20" />
                     <div className="mx-2 mt-2 h-2 w-2/3 rounded bg-white/16" />
-                    {hotspots
-                      .filter((hotspot) => hotspot.personaId === persona.id)
-                      .slice(0, 4)
-                      .map((hotspot) => (
-                        <span
-                          aria-label={`${hotspot.personaName} ${hotspot.category} hotspot`}
-                          className={`absolute grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/70 text-[9px] font-black text-white shadow-lg hotspot-pulse ${hotspotClass(
-                            hotspot.severity,
-                          )}`}
-                          key={hotspot.id}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleHotspotSelect(hotspot);
-                          }}
-                          role="button"
-                          style={{
-                            left: `${hotspot.x}%`,
-                            top: `${hotspot.y}%`,
-                            height: `${14 + hotspot.severity * 2}px`,
-                            width: `${14 + hotspot.severity * 2}px`,
-                          }}
-                          tabIndex={0}
-                          title={`${hotspot.category}: ${hotspot.evidence}`}
-                        >
-                          {hotspot.severity}
-                        </span>
-                      ))}
+                    <HotspotLayer
+                      hotspots={personaHotspots}
+                      onSelect={handleHotspotSelect}
+                    />
                   </div>
                   <div className="mx-auto mb-9 h-28 w-24 rounded-t-full bg-[#d9b18f] shadow-lg">
                     <div className="mx-auto h-10 w-16 rounded-b-full bg-white/75" />
@@ -816,9 +799,9 @@ export default function Home() {
         </div>
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
           <Sparkles className="mb-4 text-grape" />
-          <p className="text-3xl font-black">{hotspots.length} hotspots</p>
+          <p className="text-3xl font-black">{visualHotspots.length} hotspots</p>
           <p className="mt-2 text-sm text-ink/66">
-            {hotspotSummary.trust} trust, {hotspotSummary.clarity} clarity, {hotspotSummary.navigation} navigation.
+            {hotspotSummary(hotspotCounts)}
           </p>
           <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink/40">
             {heatmapLine}
@@ -1068,6 +1051,40 @@ function MetricTile({ label, value }: { label: string; value: string }) {
   );
 }
 
+function HotspotLayer({
+  hotspots,
+  onSelect,
+}: {
+  hotspots: VisualHotspot[];
+  onSelect: (hotspot: VisualHotspot) => void;
+}) {
+  if (hotspots.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0">
+      {hotspots.slice(0, 4).map((hotspot) => (
+        <button
+          aria-label={`${hotspot.category} hotspot: ${hotspot.evidence}`}
+          className={`absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/80 text-[10px] font-black text-white shadow-lg ${hotspotClass(
+            hotspot.severity,
+          )}`}
+          key={hotspot.id}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(hotspot);
+          }}
+          style={{ left: `${hotspot.x}%`, top: `${hotspot.y}%` }}
+          title={`${hotspot.label}: ${hotspot.recommendation}`}
+          type="button"
+        >
+          <span className="absolute inset-0 animate-ping rounded-full bg-current opacity-35" />
+          <span className="relative">{hotspot.severity}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function markResultFailure(session: NormalizedSession): NormalizedSession {
   return {
     ...session,
@@ -1099,9 +1116,18 @@ function variantClass(variant: number): string {
 }
 
 function hotspotClass(severity: number): string {
-  if (severity >= 4) return "bg-tomato";
-  if (severity === 3) return "bg-brass";
-  return "bg-mint";
+  if (severity >= 4) return "bg-tomato text-tomato";
+  if (severity === 3) return "bg-brass text-brass";
+  return "bg-mint text-mint";
+}
+
+function hotspotSummary(counts: Record<string, number>): string {
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return "Friction heatmap appears as findings arrive.";
+  return entries
+    .slice(0, 3)
+    .map(([category, count]) => `${count} ${category}`)
+    .join(" · ");
 }
 
 function scoreImpactLabel(session?: NormalizedSession): string {
