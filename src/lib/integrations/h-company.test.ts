@@ -176,6 +176,24 @@ describe("H Company custom persona dispatch", () => {
     }));
   });
 
+  it("captures the agent pointer position from think-aloud action events", async () => {
+    process.env.HAI_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      new_events: [{
+        message: 'GRANNY_EVENT {"type":"think_aloud","text":"Where is that button?","emotion":"uncertain","x":72,"y":64,"step":4}',
+      }],
+      next_index: 1,
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    const batch = await getHCompanySessionEvents("session-live", "casey", 0);
+
+    expect(batch.events[0]).toEqual(expect.objectContaining({
+      type: "narration",
+      x: 72,
+      y: 64,
+    }));
+  });
+
   it("does not send invalid session identifiers to H", async () => {
     process.env.HAI_API_KEY = "test-key";
     const fetchMock = vi.fn();

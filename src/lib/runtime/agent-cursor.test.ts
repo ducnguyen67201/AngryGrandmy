@@ -1,0 +1,44 @@
+import { describe, expect, it } from "vitest";
+import type { AgentRuntimeEvent } from "./agent-events";
+import { getAgentCursorForFrame } from "./agent-cursor";
+
+function event(
+  id: string,
+  cursor: number,
+  x: number,
+  y: number,
+  personaId = "casey",
+): AgentRuntimeEvent {
+  return {
+    id,
+    sessionId: "session-casey",
+    personaId,
+    cursor,
+    step: cursor,
+    createdAt: `2026-07-11T22:00:0${cursor}.000Z`,
+    type: "narration",
+    text: "Thinking aloud",
+    x,
+    y,
+  };
+}
+
+describe("agent cursor replay", () => {
+  it("uses the latest reported cursor at or before the active evidence frame", () => {
+    expect(getAgentCursorForFrame({
+      events: [event("first", 2, 20, 30), event("future", 6, 80, 90)],
+      personaId: "casey",
+      frameCursor: 4,
+      fallback: null,
+    })).toEqual({ x: 20, y: 30, eventId: "first", source: "agent" });
+  });
+
+  it("labels a heatmap position as estimated when old evidence has no cursor data", () => {
+    expect(getAgentCursorForFrame({
+      events: [],
+      personaId: "casey",
+      frameCursor: 12,
+      fallback: { id: "hotspot-1", x: 65, y: 42 },
+    })).toEqual({ x: 65, y: 42, eventId: "hotspot-1", source: "evidence" });
+  });
+});
