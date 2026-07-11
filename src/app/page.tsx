@@ -20,6 +20,20 @@ type ApiRunPayload = {
   error?: { message?: string };
 };
 
+type TestPlanPayload = {
+  data?: {
+    analysis?: RunSnapshot["analysis"];
+    personas?: NonNullable<RunSnapshot["analysis"]>["personas"];
+    primaryFlows?: NonNullable<RunSnapshot["analysis"]>["primaryFlows"];
+  };
+  meta?: {
+    mode?: string;
+    model?: string | null;
+    fallbackReason?: string | null;
+  };
+  error?: { message?: string };
+};
+
 type VoiceReactionPayload = {
   data?: {
     source: "gradium" | "text";
@@ -42,6 +56,7 @@ export default function Home() {
   const [targetUrl, setTargetUrl] = useState("https://demo-health.example");
   const [authorized, setAuthorized] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
   const [statusLine, setStatusLine] = useState(
@@ -246,9 +261,54 @@ export default function Home() {
     void scoreRun();
   }, [activeSessions.length, liveMode, snapshot.analysis?.personas, snapshot.sessions]);
 
-  async function handleLaunch(event: FormEvent<HTMLFormElement>) {
+  async function handlePlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
+    setStatusLine("Generating the persona test plan before dispatch.");
+
+    try {
+      const response = await fetch("/api/generate-test-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: targetUrl,
+          objective: "Find the primary user workflow and stop before an irreversible action.",
+          authorizationConfirmed: authorized,
+        }),
+      });
+      const payload = (await response.json()) as TestPlanPayload;
+
+      if (!response.ok || !payload.data?.analysis) {
+        throw new Error(payload.error?.message ?? "Could not generate a persona plan.");
+      }
+
+      const now = new Date().toISOString();
+      setSnapshot((current) => ({
+        ...current,
+        id: `plan-${Date.now()}`,
+        phase: "revealing",
+        url: targetUrl,
+        objective: "Find the primary user workflow and stop before an irreversible action.",
+        analysis: payload.data?.analysis ?? current.analysis,
+        sessions: [],
+        selectedPersonaId: payload.data?.analysis?.personas[0]?.id ?? null,
+        report: null,
+        error: null,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      setStatusLine(
+        `Generated ${payload.data.analysis.personas.length} personas with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
+      );
+    } catch (error) {
+      setStatusLine(error instanceof Error ? error.message : "Could not generate a persona plan.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLaunch() {
+    setDispatching(true);
     setStatusLine("Launching four H Company computer-use sessions.");
 
     try {
@@ -267,6 +327,8 @@ export default function Home() {
         throw new Error(payload.error?.message ?? "Could not start analysis.");
       }
 
+      pendingResultIds.current.clear();
+      lastReportKey.current = null;
       setSnapshot(payload.data);
       if (payload.meta?.mode === "h-company") {
         setStatusLine(
@@ -280,7 +342,7 @@ export default function Home() {
     } catch (error) {
       setStatusLine(error instanceof Error ? error.message : "Could not launch H agents.");
     } finally {
-      setLoading(false);
+      setDispatching(false);
     }
   }
 
@@ -363,7 +425,7 @@ export default function Home() {
 
           <form
             className="grid gap-3 rounded-lg border border-ink/12 bg-white/72 p-4 shadow-sm backdrop-blur"
-            onSubmit={handleLaunch}
+            onSubmit={handlePlan}
           >
             <label className="text-sm font-bold" htmlFor="target-url">
               Authorized site URL
@@ -378,13 +440,22 @@ export default function Home() {
               />
               <button
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-ink px-5 font-bold text-paper disabled:cursor-not-allowed disabled:opacity-55"
-                disabled={loading || !authorized}
+                disabled={loading || dispatching || !authorized}
                 type="submit"
               >
                 <Play size={18} />
-                {loading ? "Dispatching..." : "Release the Panel"}
+                {loading ? "Planning..." : "Generate Panel"}
               </button>
             </div>
+            <button
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md border border-ink/18 bg-white px-5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-55"
+              disabled={loading || dispatching || !authorized || !snapshot.analysis}
+              onClick={handleLaunch}
+              type="button"
+            >
+              <Play size={18} />
+              {dispatching ? "Dispatching..." : "Dispatch Grandmas"}
+            </button>
             <label className="inline-flex items-start gap-3 text-sm leading-6 text-ink/70">
               <input
                 checked={authorized}
@@ -468,9 +539,23 @@ export default function Home() {
           <section className="grid gap-4 md:grid-cols-4">
             {snapshot.analysis?.personas.map((persona) => (
               <article className="rounded-lg border border-ink/12 bg-white/72 p-4 shadow-sm" key={persona.id}>
-                <p className="font-black">{persona.displayName}</p>
-                <p className="mt-1 text-sm font-semibold text-brass">{persona.tagline}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-black">{persona.displayName}</p>
+                    <p className="mt-1 text-sm font-semibold text-brass">{persona.tagline}</p>
+                  </div>
+                  <span className="rounded bg-ink/6 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-ink/55">
+                    {persona.digitalConfidence}
+                  </span>
+                </div>
                 <p className="mt-3 line-clamp-3 text-sm leading-6 text-ink/68">{persona.context}</p>
+                <div className="mt-4 rounded-md border border-ink/10 bg-white p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-ink/40">Task</p>
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-ink/72">{persona.task}</p>
+                </div>
+                <p className="mt-3 line-clamp-2 text-xs font-semibold leading-5 text-tomato/80">
+                  Stop: {persona.stopConditions[0]}
+                </p>
               </article>
             ))}
           </section>
