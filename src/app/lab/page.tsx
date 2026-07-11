@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
-import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, Play, ShieldCheck, Sparkles, Volume2 } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
@@ -43,6 +43,11 @@ import { getRunGuidance } from "@/lib/ui/run-guidance";
 import { buildPanelReviewItems } from "@/lib/ui/panel-review";
 import { getLiveViewportPresentation } from "@/lib/ui/live-viewport";
 import { canDispatchSuggestedPersonas } from "@/lib/ui/persona-approval";
+import {
+  getPersonaViewportFrames,
+  mergeAgentRuntimeEvents,
+  type AgentRuntimeEvent,
+} from "@/lib/runtime/agent-events";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -89,8 +94,6 @@ type LocalizeHotspotsPayload = {
   };
   error?: { message?: string };
 };
-type AgentRuntimeEvent={id:string;sessionId:string;personaId:string;cursor:number;step:number;createdAt:string;type:"viewport"|"narration"|"research"|"frustration";imageUrl?:string;text?:string;category?:"navigation"|"clarity"|"feedback"|"recovery"|"trust"|"accessibility"|"technical";severity?:1|2|3|4|5;observation?:string;visibleEvidence?:string;currentUrl?:string;recommendation?:string};
-
 const TERMINAL_STATUSES = new Set<NormalizedSession["status"]>([
   "completed",
   "timed_out",
@@ -154,6 +157,8 @@ export default function Home() {
   const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
   const [fixRequestIds, setFixRequestIds] = useState<Set<string>>(() => new Set());
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
+  const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
+  const [replayPlaying, setReplayPlaying] = useState(false);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
   );
@@ -186,6 +191,7 @@ export default function Home() {
       ),
     [snapshot.sessions],
   );
+  const runComplete = snapshot.sessions.length > 0 && activeSessions.length === 0;
   const sessionKey = snapshot.sessions
     .map((session) => `${session.sessionId}:${session.personaId}`)
     .join("|");
@@ -269,9 +275,30 @@ export default function Home() {
     snapshot.sessions.find((session) => session.personaId === selectedPersona?.id) ??
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
     snapshot.sessions[0];
-  const liveNarration = [...liveEvents].reverse().find((event) => event.type === "narration" && event.personaId === selectedPersona?.id);
-  const liveFrustration = [...liveEvents].reverse().find((event) => event.type === "frustration" && event.personaId === selectedPersona?.id);
-  const liveViewport = [...liveEvents].reverse().find((event) => event.type === "viewport" && event.personaId === selectedPersona?.id && event.imageUrl);
+  const viewportFrames = useMemo(
+    () => getPersonaViewportFrames(liveEvents, selectedPersona?.id),
+    [liveEvents, selectedPersona?.id],
+  );
+  const lastViewportFrameIndex = Math.max(0, viewportFrames.length - 1);
+  const activeViewportFrameIndex =
+    replayFrameIndex === null
+      ? lastViewportFrameIndex
+      : Math.min(replayFrameIndex, lastViewportFrameIndex);
+  const liveViewport = viewportFrames[activeViewportFrameIndex];
+  const eventCursorLimit =
+    replayFrameIndex === null ? Number.POSITIVE_INFINITY : liveViewport?.cursor ?? 0;
+  const liveNarration = [...liveEvents].reverse().find(
+    (event) =>
+      event.type === "narration" &&
+      event.personaId === selectedPersona?.id &&
+      event.cursor <= eventCursorLimit,
+  );
+  const liveFrustration = [...liveEvents].reverse().find(
+    (event) =>
+      event.type === "frustration" &&
+      event.personaId === selectedPersona?.id &&
+      event.cursor <= eventCursorLimit,
+  );
   const selectedHotspots = displayedHotspots.filter(
     (hotspot) => hotspot.personaId === selectedPersona?.id,
   );
@@ -305,6 +332,28 @@ export default function Home() {
         .join("|"),
     [fallbackHotspots],
   );
+
+  useEffect(() => {
+    setReplayFrameIndex(null);
+    setReplayPlaying(false);
+  }, [selectedPersona?.id]);
+
+  useEffect(() => {
+    if (!replayPlaying || viewportFrames.length < 2) return;
+
+    const timer = window.setInterval(() => {
+      setReplayFrameIndex((current) => {
+        const next = (current ?? 0) + 1;
+        if (next >= viewportFrames.length) {
+          setReplayPlaying(false);
+          return viewportFrames.length - 1;
+        }
+        return next;
+      });
+    }, 1200);
+
+    return () => window.clearInterval(timer);
+  }, [replayPlaying, viewportFrames.length]);
 
   useEffect(() => {
     const queryState = parseLabSearchParams(window.location.search);
@@ -484,19 +533,7 @@ export default function Home() {
 
       const incoming = batches.flat();
       if (incoming.length === 0) return;
-      setLiveEvents((current) => {
-        const viewportPersonas = new Set(
-          incoming
-            .filter((event) => event.type === "viewport")
-            .map((event) => event.personaId),
-        );
-        const retained = current.filter(
-          (event) =>
-            event.type !== "viewport" || !viewportPersonas.has(event.personaId),
-        );
-        const known = new Set(retained.map((event) => event.id));
-        return [...retained, ...incoming.filter((event) => !known.has(event.id))];
-      });
+      setLiveEvents((current) => mergeAgentRuntimeEvents(current, incoming));
 
       for (const event of incoming) {
         const persona = snapshot.analysis?.personas.find(
@@ -1837,8 +1874,6 @@ export default function Home() {
     : null;
   const fixReady = selectedFixRequestId ? fixRequestIds.has(selectedFixRequestId) : false;
   const replayMode = selectedSession?.sessionId.startsWith("demo-") ?? false;
-  const runComplete = isLiveView && activeSessions.length === 0;
-
   return (
     <div className="simple-app">
       <header className="simple-header">
@@ -2059,7 +2094,17 @@ export default function Home() {
                   <b>{selectedSession?.status ?? "queued"}</b>
                 </div>
                 <div className="browser-screen">
-                  <span className="frame-mode">{liveViewport ? "Exact H viewport · live frames" : replayMode ? "Evidence replay" : "Waiting for H viewport"}</span>
+                  <span className="frame-mode">
+                    {liveViewport
+                      ? runComplete
+                        ? `Evidence replay · frame ${activeViewportFrameIndex + 1} of ${viewportFrames.length}`
+                        : `Exact H viewport · ${viewportFrames.length} frame${viewportFrames.length === 1 ? "" : "s"}`
+                      : replayMode
+                        ? "Evidence replay"
+                        : runComplete
+                          ? "No H viewport frames received"
+                          : "Waiting for H viewport"}
+                  </span>
                   {liveViewport?.imageUrl ? (
                     <Image
                       alt={`Live H Company browser for ${selectedPersona?.displayName ?? "agent"}`}
@@ -2110,6 +2155,54 @@ export default function Home() {
                     </div>
                   ) : null}
                 </div>
+                {viewportFrames.length > 0 ? (
+                  <div className="replay-controls" aria-label="Computer-use run replay controls">
+                    <button
+                      aria-label="Previous captured frame"
+                      disabled={activeViewportFrameIndex === 0}
+                      onClick={() => {
+                        setReplayPlaying(false);
+                        setReplayFrameIndex(Math.max(0, activeViewportFrameIndex - 1));
+                      }}
+                      type="button"
+                    >
+                      <SkipBack size={14} />
+                    </button>
+                    <button
+                      aria-label={replayPlaying ? "Pause run replay" : "Play run replay"}
+                      disabled={viewportFrames.length < 2}
+                      onClick={() => {
+                        if (replayPlaying) {
+                          setReplayPlaying(false);
+                          return;
+                        }
+                        if (activeViewportFrameIndex >= viewportFrames.length - 1) {
+                          setReplayFrameIndex(0);
+                        }
+                        setReplayPlaying(true);
+                      }}
+                      type="button"
+                    >
+                      {replayPlaying ? <Pause size={14} /> : <Play size={14} />}
+                      {replayPlaying ? "Pause" : runComplete ? "Replay run" : "Review frames"}
+                    </button>
+                    <div className="replay-progress" aria-hidden="true">
+                      <i style={{ width: `${((activeViewportFrameIndex + 1) / viewportFrames.length) * 100}%` }} />
+                    </div>
+                    <span>{activeViewportFrameIndex + 1} / {viewportFrames.length}</span>
+                    <button
+                      aria-label="Next captured frame"
+                      disabled={activeViewportFrameIndex >= viewportFrames.length - 1}
+                      onClick={() => {
+                        setReplayPlaying(false);
+                        setReplayFrameIndex(Math.min(viewportFrames.length - 1, activeViewportFrameIndex + 1));
+                      }}
+                      type="button"
+                    >
+                      <SkipForward size={14} />
+                    </button>
+                  </div>
+                ) : null}
                 <div className="agent-action-bar">
                   <span className="agent-avatar">{selectedPersona?.displayName.charAt(0) ?? "?"}</span>
                   <div>
@@ -2118,8 +2211,12 @@ export default function Home() {
                     {!replayMode ? (
                       <span className="live-feed-note">
                         {liveViewport
-                          ? "Rendering exact H browser frames as observation events arrive."
-                          : "Waiting for the first H browser frame. Agent View remains available while the agent is queued."}
+                          ? runComplete
+                            ? "Captured computer-use evidence is available above. Replay the run or select a heatmap marker."
+                            : "Rendering exact H browser frames as observation events arrive."
+                          : runComplete
+                            ? "H did not include browser frames in the event feed. Open Agent View to inspect the provider recording."
+                            : "Waiting for the first H browser frame. Agent View remains available while the agent is queued."}
                       </span>
                     ) : null}
                   </div>

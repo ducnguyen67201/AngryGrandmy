@@ -5,13 +5,13 @@ import type {
   ProductAnalysis,
 } from "@/lib/schemas/run";
 import { normalizeSessionResult } from "@/lib/results/normalize-session-result";
+import type { AgentRuntimeEvent } from "@/lib/runtime/agent-events";
 
 const H_BASE_URL =
   process.env.HAI_AGENTS_BASE_URL ?? "https://agp.eu.hcompany.ai/api/v2";
 const H_AGENT = process.env.HAI_AGENT ?? "h/web-surfer-flash";
 
 type HSessionResponse = Record<string, unknown>;
-export type AgentRuntimeEvent={id:string;sessionId:string;personaId:string;cursor:number;step:number;createdAt:string;type:"viewport"|"narration"|"research"|"frustration";imageUrl?:string;text?:string;emotion?:string;query?:string;category?:string;severity?:1|2|3|4|5;observation?:string;visibleEvidence?:string;currentUrl?:string;recommendation?:string};
 export type HCompanyEventBatch = { events: AgentRuntimeEvent[]; cursor: number };
 
 export function isHCompanyConfigured() {
@@ -156,7 +156,7 @@ export async function getHCompanySessionEvents(
       step: cursor,
       createdAt,
     };
-    const observation = findObservation(event);
+    const observation = findViewportObservation(event);
     const viewport = observation ? viewportFromObservation(observation) : null;
     const runtimeEvents = parseGrannyEvents(event, base);
     return viewport
@@ -288,14 +288,12 @@ function readOptionalNumber(source: unknown, paths: string[]): number | null {
   return null;
 }
 
-function findObservation(source: unknown): Record<string, unknown> | null {
+function findViewportObservation(source: unknown): Record<string, unknown> | null {
   if (!source || typeof source !== "object") return null;
   const record = source as Record<string, unknown>;
-  if (record.observation && typeof record.observation === "object") {
-    return record.observation as Record<string, unknown>;
-  }
+  if (viewportFromObservation(record)) return record;
   for (const value of Object.values(record)) {
-    const observation = findObservation(value);
+    const observation = findViewportObservation(value);
     if (observation) return observation;
   }
   return null;
@@ -305,27 +303,60 @@ function viewportFromObservation(observation: Record<string, unknown>): {
   imageUrl: string;
   currentUrl?: string;
 } | null {
-  const image = observation.image;
-  if (!image || typeof image !== "object") return null;
-  const imageRecord = image as Record<string, unknown>;
-  const source = imageRecord.source;
-  if (typeof source !== "string" || source.length === 0 || source.length > 12_000_000) {
+  const image = observation.image ?? observation.screenshot;
+  const hasImageField =
+    image !== undefined ||
+    observation.image_url !== undefined ||
+    observation.screenshot_url !== undefined;
+  if (!hasImageField) return null;
+  const imageRecord =
+    image && typeof image === "object"
+      ? (image as Record<string, unknown>)
+      : observation;
+  const nestedSource =
+    imageRecord.source && typeof imageRecord.source === "object"
+      ? (imageRecord.source as Record<string, unknown>)
+      : null;
+  const source = firstString([
+    typeof image === "string" ? image : null,
+    imageRecord.source,
+    imageRecord.data,
+    imageRecord.base64,
+    imageRecord.image_url,
+    imageRecord.screenshot_url,
+    nestedSource?.data,
+    nestedSource?.base64,
+    nestedSource?.url,
+  ]);
+  if (!source || source.length > 12_000_000) {
     return null;
   }
   const mediaType =
-    typeof imageRecord.media_type === "string"
-      ? imageRecord.media_type.replace(/^image\//, "")
+    typeof (imageRecord.media_type ?? nestedSource?.media_type) === "string"
+      ? String(imageRecord.media_type ?? nestedSource?.media_type).replace(/^image\//, "")
       : "png";
   const imageUrl = source.startsWith("data:image/")
     ? source
-    : source.startsWith("https://")
+    : /^https?:\/\//.test(source)
       ? source
       : `data:image/${mediaType};base64,${source}`;
   const currentUrl =
-    typeof observation.url === "string" && /^https?:\/\//.test(observation.url)
-      ? observation.url
+    firstString([
+      observation.url,
+      observation.current_url,
+      observation.currentUrl,
+    ]);
+  const safeCurrentUrl =
+    currentUrl && /^https?:\/\//.test(currentUrl)
+      ? currentUrl
       : undefined;
-  return { imageUrl, ...(currentUrl ? { currentUrl } : {}) };
+  return { imageUrl, ...(safeCurrentUrl ? { currentUrl: safeCurrentUrl } : {}) };
+}
+
+function firstString(values: unknown[]): string | null {
+  return values.find(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  ) ?? null;
 }
 
 function parseGrannyEvents(
@@ -369,7 +400,7 @@ function parseGrannyEvents(
       return [{
         ...eventBase,
         type: "frustration",
-        category: String(event.category ?? "clarity"),
+        category: isFrictionCategory(event.category) ? event.category : "clarity",
         severity: severity as 1 | 2 | 3 | 4 | 5,
         observation: event.observation,
         visibleEvidence: event.visibleEvidence,
@@ -377,6 +408,20 @@ function parseGrannyEvents(
         recommendation: String(event.suggestedDirection ?? "Remove this barrier."),
       }];
     });
+}
+
+function isFrictionCategory(
+  value: unknown,
+): value is NonNullable<AgentRuntimeEvent["category"]> {
+  return [
+    "navigation",
+    "clarity",
+    "feedback",
+    "recovery",
+    "trust",
+    "accessibility",
+    "technical",
+  ].includes(String(value));
 }
 
 function mapHStatus(raw: string | null): NormalizedSession["status"] {

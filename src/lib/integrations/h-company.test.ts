@@ -130,6 +130,34 @@ describe("H Company custom persona dispatch", () => {
     ]);
   });
 
+  it("accepts H viewport images nested in a screenshot source block", async () => {
+    process.env.HAI_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      new_events: [{
+        type: "observation_event",
+        data: {
+          current_url: "https://example.com/account",
+          screenshot: {
+            source: {
+              type: "base64",
+              media_type: "image/jpeg",
+              data: "anBlZw==",
+            },
+          },
+        },
+      }],
+      next_index: 1,
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    const batch = await getHCompanySessionEvents("session-live", "joan", 0);
+
+    expect(batch.events[0]).toEqual(expect.objectContaining({
+      type: "viewport",
+      currentUrl: "https://example.com/account",
+      imageUrl: "data:image/jpeg;base64,anBlZw==",
+    }));
+  });
+
   it("does not send invalid session identifiers to H", async () => {
     process.env.HAI_API_KEY = "test-key";
     const fetchMock = vi.fn();
