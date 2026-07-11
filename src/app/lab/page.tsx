@@ -256,6 +256,8 @@ export default function Home() {
                 observation: event.observation,
                 visibleEvidence: event.visibleEvidence,
                 recommendation: event.recommendation,
+                x: event.x,
+                y: event.y,
               }]
             : [],
         ),
@@ -2440,6 +2442,11 @@ export default function Home() {
                           ? "No H viewport frames received"
                           : "Waiting for H viewport"}
                   </span>
+                  {selectedHotspots.length > 0 ? (
+                    <span className="live-heatmap-status">
+                      <Activity size={11} /> {liveMode ? "Live heatmap" : "Evidence heatmap"} · {selectedHotspots.length} signal{selectedHotspots.length === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
                   {liveViewport?.imageUrl ? (
                     <Image
                       alt={`Live H Company browser for ${selectedPersona?.displayName ?? "agent"}`}
@@ -2631,7 +2638,7 @@ function HotspotLayer({
 
   return (
     <div className="absolute inset-0 z-20">
-      {hotspots.slice(0, 4).map((hotspot) => (
+      {hotspots.slice(-6).map((hotspot) => (
         <button
           aria-label={`${hotspot.category} hotspot: ${hotspot.evidence}`}
           className={`absolute grid h-8 w-8 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-white text-sm font-black text-white shadow-2xl transition hover:scale-125 focus:outline-none focus:ring-2 focus:ring-white ${hotspotClass(
@@ -2646,6 +2653,11 @@ function HotspotLayer({
           title={`${hotspot.label}: ${hotspot.recommendation}`}
           type="button"
         >
+          <span
+            aria-hidden="true"
+            className="absolute -inset-6 rounded-full opacity-35 blur-xl"
+            style={{ backgroundColor: hotspotGlowColor(hotspot.severity) }}
+          />
           <span className="absolute -inset-2 animate-ping rounded-full bg-white/35" />
           <span className="absolute -inset-1 rounded-full border border-white/45" />
           <span className="relative">{hotspot.severity}</span>
@@ -2707,6 +2719,12 @@ function hotspotClass(severity: number): string {
   if (severity >= 4) return "bg-tomato shadow-[0_0_34px_rgba(229,88,72,0.85)]";
   if (severity === 3) return "bg-brass shadow-[0_0_30px_rgba(191,131,45,0.8)]";
   return "bg-mint shadow-[0_0_28px_rgba(98,196,155,0.78)]";
+}
+
+function hotspotGlowColor(severity: number): string {
+  if (severity >= 4) return "rgba(229, 88, 72, .82)";
+  if (severity === 3) return "rgba(191, 131, 45, .76)";
+  return "rgba(98, 196, 155, .72)";
 }
 
 function hotspotSummary(counts: Record<string, number>): string {

@@ -414,6 +414,7 @@
 .provider-badges i.connected { background: #3fc28d; box-shadow: 0 0 0 3px rgba(63,194,141,.12); }
 .provider-badges i.done { background: #7766dc; }
 .frame-mode { position: absolute; z-index: 8; top: 64px; left: 14px; padding: 5px 8px; color: #55605c; border: 1px solid rgba(24,32,30,.1); border-radius: 999px; background: rgba(255,255,255,.82); backdrop-filter: blur(8px); font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.live-heatmap-status { position: absolute; z-index: 21; top: 64px; right: 14px; padding: 5px 8px; display: flex; align-items: center; gap: 5px; color: #a43f32; border: 1px solid rgba(190,85,68,.18); border-radius: 999px; background: rgba(255,245,239,.9); box-shadow: 0 7px 20px rgba(115,44,35,.1); backdrop-filter: blur(8px); font-size: 8px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
 .thought-annotation, .frustration-annotation { position: absolute; z-index: 24; border-radius: 12px; box-shadow: 0 14px 35px rgba(17,28,24,.18); backdrop-filter: blur(13px); }
 .thought-annotation { left: 20px; bottom: 18px; width: min(360px, calc(100% - 40px)); padding: 12px 14px; color: #eff8f4; background: rgba(20,30,27,.9); }
 .thought-annotation > span, .frustration-annotation > span { display: flex; align-items: center; gap: 5px; font-size: 8px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }

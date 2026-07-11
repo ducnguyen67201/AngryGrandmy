@@ -21,4 +21,27 @@ describe("live heatmap hotspots", () => {
 
     expect(hotspots[0]).toMatchObject({ x: 88, y: 17, severity: 4 });
   });
+
+  it("falls back to safe deterministic coordinates when reported positions are invalid", () => {
+    const hotspots = buildLiveVisualHotspots([
+      {
+        id: "friction-2",
+        personaId: "unknown-persona",
+        step: 1,
+        category: "navigation",
+        severity: 2,
+        observation: "The navigation is unclear.",
+        visibleEvidence: "Several identical icons are visible.",
+        recommendation: "Label the navigation icons.",
+        x: 140,
+        y: Number.NaN,
+      },
+    ], null);
+
+    expect(hotspots[0]).toMatchObject({
+      personaName: "unknown-persona",
+      x: 28,
+      y: 28,
+    });
+  });
 });
