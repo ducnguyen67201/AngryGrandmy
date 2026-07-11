@@ -110,6 +110,18 @@ describe("live persona voice queue", () => {
     })).toBeNull();
   });
 
+  it("allows the active replay frame to be localized when narration belongs to a later frame", () => {
+    expect(getScreenNarrationCandidate({
+      enabled: true,
+      events: [
+        { id: "frame", personaId: "linda", type: "viewport", cursor: 2, imageUrl: "data:image/png;base64,one" },
+        { id: "later-thought", personaId: "linda", type: "narration", cursor: 8, text: "Later evidence." },
+      ],
+      selectedPersonaId: "linda",
+      processedEventIds: new Set(),
+    })?.id).toBe("frame");
+  });
+
   it("does not inspect frames until live voice is enabled for a persona", () => {
     const events = [
       { id: "frame", personaId: "linda", type: "viewport", cursor: 2, imageUrl: "data:image/png;base64,one" },
