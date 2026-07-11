@@ -7,6 +7,7 @@ import {
 } from "@/lib/integrations/h-company";
 import { buildProductAnalysisPlan } from "@/lib/product/analyze-product";
 import type { NormalizedSession } from "@/lib/schemas/run";
+import { ProductAnalysisSchema } from "@/lib/schemas/run";
 import { validateAnalyzeRequest } from "@/lib/security/url-policy";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,12 @@ export async function POST(req: NextRequest) {
   try {
     const request = validateAnalyzeRequest(await req.json());
     const plan = await buildProductAnalysisPlan(request);
-    const analysis = plan.analysis;
+    const analysis = request.customPersona
+      ? ProductAnalysisSchema.parse({
+          ...plan.analysis,
+          personas: [...plan.analysis.personas, request.customPersona],
+        })
+      : plan.analysis;
 
     if (!isHCompanyConfigured()) {
       return ok(createDemoRun({ url: request.url, objective: request.objective, analysis }), {

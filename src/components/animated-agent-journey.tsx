@@ -244,7 +244,9 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
       </aside>
 
       <div className="persona-dock">
-        <span className="persona-dock-label">Four personas observing</span>
+        <span className="persona-dock-label">
+          {personas.length === 4 ? "Four" : personas.length} personas observing
+        </span>
         <div className="persona-list">
           {personas.map((persona, index) => {
             const state = sessionsByPersona.get(persona.id)?.visualState ?? "queued";
@@ -252,7 +254,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
               <div className="persona-chip" key={persona.id}>
                 <span
                   className="persona-avatar"
-                  style={{ background: personaColors[index] }}
+                  style={{ background: personaColors[index % personaColors.length] }}
                 >
                   {persona.displayName.charAt(0)}
                 </span>

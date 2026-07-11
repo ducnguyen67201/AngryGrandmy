@@ -119,9 +119,26 @@ describe("run schemas", () => {
     expect(() =>
       productAnalysisSchema.parse({
         ...analysis,
+        personas: [...analysis.personas, { ...persona, id: "custom-alex" }]
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      productAnalysisSchema.parse({
+        ...analysis,
         personas: [persona]
       })
     ).toThrow();
+  });
+
+  it("accepts one structured custom persona in an authorized analysis request", () => {
+    expect(
+      analyzeRequestSchema.parse({
+        url: "https://example.com",
+        authorizationConfirmed: true,
+        customPersona: { ...persona, id: "custom-alex", displayName: "Alex" }
+      }).customPersona
+    ).toMatchObject({ id: "custom-alex", displayName: "Alex" });
   });
 
   it("keeps visual states finite for the lab renderers", () => {
