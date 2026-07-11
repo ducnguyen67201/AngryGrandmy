@@ -36,7 +36,7 @@ describe("GET /api/h-frame", () => {
     expect(new Headers(init.headers).get("Authorization")).toBe(
       "Bearer test-key",
     );
-    expect(init.redirect).toBe("error");
+    expect(init.redirect).toBe("manual");
   });
 
   it("rejects an arbitrary source without fetching it", async () => {
