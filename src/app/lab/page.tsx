@@ -6,10 +6,13 @@ import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, E
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import {
+  createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
+  getLiveVoicePlaybackMode,
   getScreenNarrationCandidate,
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
+  shouldSpeakCurrentNarrationOnEnable,
   shouldEnableLiveVoiceForDispatch,
   type LiveVoiceQueueItem,
 } from "@/lib/audio/live-voice-queue";
@@ -441,6 +444,9 @@ export default function Home() {
       audio.removeAttribute("src");
       audio.load();
     }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
     if (message) setLiveVoiceLine(message);
   }, []);
 
@@ -467,13 +473,14 @@ export default function Home() {
     const audioSrc = payload.data?.audioBase64
       ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
       : payload.data?.audioUrl;
-    if (!response.ok || !audioSrc || !payload.data?.transcript) return null;
+    if (!response.ok || !payload.data?.transcript) return null;
 
-    const item = {
+    const item = createLiveVoiceQueueItem({
       eventId,
-      audioSrc,
+      audioSrc: audioSrc ?? null,
       transcript: payload.data.transcript,
-    };
+    });
+    if (!item) return null;
     liveVoiceAudioCacheRef.current.set(eventId, item);
     return item;
   }, []);
@@ -488,20 +495,42 @@ export default function Home() {
       return;
     }
 
-    const audio = liveVoiceAudioRef.current ?? new Audio();
-    liveVoiceAudioRef.current = audio;
     liveVoicePlayingRef.current = true;
-    audio.volume = 1;
-    audio.src = next.audioSrc;
     setLiveVoiceLine(`Speaking: “${next.transcript}”`);
 
     const finish = () => {
       liveVoicePlayingRef.current = false;
-      audio.onended = null;
-      audio.onerror = null;
       playNextLiveVoiceItem();
     };
-    audio.onended = finish;
+
+    if (getLiveVoicePlaybackMode(next) === "browser-speech") {
+      if (!("speechSynthesis" in window)) {
+        setLiveVoiceLine("No speech engine is available in this browser.");
+        finish();
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(next.transcript);
+      utterance.rate = 0.9;
+      utterance.pitch = 1.05;
+      utterance.onend = finish;
+      utterance.onerror = () => {
+        setLiveVoiceLine("Browser speech failed. Try Speak this finding again.");
+        finish();
+      };
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+      return;
+    }
+
+    const audio = liveVoiceAudioRef.current ?? new Audio();
+    liveVoiceAudioRef.current = audio;
+    audio.volume = 1;
+    audio.src = next.audioSrc!;
+    audio.onended = () => {
+      audio.onended = null;
+      audio.onerror = null;
+      finish();
+    };
     audio.onerror = () => {
       setLiveVoiceLine("Could not play that reaction. Listening for the next one...");
       finish();
@@ -551,12 +580,35 @@ export default function Home() {
       setLiveVoiceLine(
         `Listening for ${selectedPersona?.displayName ?? "the selected persona"}'s next thought...`,
       );
+      if (shouldSpeakCurrentNarrationOnEnable({
+        runComplete,
+        selectedPersonaId: selectedPersona?.id,
+        narration: selectedNarration,
+      }) && selectedPersona) {
+        setLiveVoiceLine(`Preparing ${selectedPersona.displayName}'s current finding...`);
+        const voiceItem = await synthesizeVoiceItem({
+          eventId: `voice-enable:${selectedSession?.sessionId ?? selectedPersona.id}:${selectedNarration}`,
+          personaId: selectedPersona.id,
+          voiceSlot: selectedPersona.voiceSlot,
+          text: selectedNarration,
+        });
+        if (voiceItem) queueLiveVoiceItem(voiceItem);
+        else setLiveVoiceLine("Could not prepare speech. Use Speak this finding again.");
+      }
     } catch {
       liveVoiceEnabledRef.current = false;
       setLiveVoiceEnabled(false);
       setLiveVoiceLine("Your browser blocked audio. Allow sound, then try again.");
     }
-  }, [selectedPersona?.displayName, stopLiveVoicePlayback]);
+  }, [
+    queueLiveVoiceItem,
+    runComplete,
+    selectedNarration,
+    selectedPersona,
+    selectedSession?.sessionId,
+    stopLiveVoicePlayback,
+    synthesizeVoiceItem,
+  ]);
 
   const handleReplayToggle = useCallback(async () => {
     if (replayPlaying) {
@@ -2793,8 +2845,8 @@ export default function Home() {
                   <div className="thought-annotation">
                     <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
                     <blockquote>“{selectedNarration}”</blockquote>
-                    <button disabled={voiceLoading || !selectedPersona || liveVoiceEnabled} onClick={handleVoice} type="button">
-                      {liveVoiceEnabled ? "Live voice on" : voiceLoading ? "Preparing…" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
+                    <button disabled={voiceLoading || !selectedPersona} onClick={handleVoice} type="button">
+                      {voiceLoading ? "Preparing…" : liveVoiceEnabled ? runComplete ? "Speak this finding again" : "Speak this thought" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
                     </button>
                   </div>
                   {selectedFriction ? (

@@ -1,8 +1,34 @@
 export type LiveVoiceQueueItem = {
   eventId: string;
-  audioSrc: string;
+  audioSrc: string | null;
   transcript: string;
 };
+
+export function createLiveVoiceQueueItem(input: LiveVoiceQueueItem) {
+  const transcript = input.transcript.trim();
+  if (!transcript) return null;
+  return {
+    eventId: input.eventId,
+    audioSrc: input.audioSrc || null,
+    transcript,
+  } satisfies LiveVoiceQueueItem;
+}
+
+export function getLiveVoicePlaybackMode(item: LiveVoiceQueueItem) {
+  return item.audioSrc ? "provider-audio" as const : "browser-speech" as const;
+}
+
+export function shouldSpeakCurrentNarrationOnEnable({
+  runComplete,
+  selectedPersonaId,
+  narration,
+}: {
+  runComplete: boolean;
+  selectedPersonaId: string | null | undefined;
+  narration: string | null | undefined;
+}) {
+  return Boolean(runComplete && selectedPersonaId && narration?.trim());
+}
 
 export function enqueueLiveVoiceItem(
   queue: readonly LiveVoiceQueueItem[],
