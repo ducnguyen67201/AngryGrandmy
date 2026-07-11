@@ -21,7 +21,7 @@ function event(overrides: Partial<AgentRuntimeEvent>): AgentRuntimeEvent {
 }
 
 describe("buildReplayAttentionHotspots", () => {
-  it("reveals attention points only when replay reaches their evidence frame", () => {
+  it("reveals attention points only for the active replay frame window", () => {
     const events = [
       event({ id: "early", cursor: 2, x: 20, y: 30 }),
       event({ id: "current", cursor: 5, x: 60, y: 70 }),
@@ -29,8 +29,18 @@ describe("buildReplayAttentionHotspots", () => {
       event({ id: "other", personaId: "miles", cursor: 3 }),
     ];
 
-    expect(buildReplayAttentionHotspots(events, "arjun", 5).map(({ id }) => id))
-      .toEqual(["attention-early", "attention-current"]);
+    expect(buildReplayAttentionHotspots(events, "arjun", 2, 5).map(({ id }) => id))
+      .toEqual(["attention-current"]);
+  });
+
+  it("includes first-frame evidence when there is no previous replay cursor", () => {
+    const events = [
+      event({ id: "first", cursor: 1, x: 20, y: 30 }),
+      event({ id: "later", cursor: 5, x: 60, y: 70 }),
+    ];
+
+    expect(buildReplayAttentionHotspots(events, "arjun", null, 1).map(({ id }) => id))
+      .toEqual(["attention-first"]);
   });
 
   it("makes frustration hotter than ordinary visual attention", () => {
@@ -43,7 +53,7 @@ describe("buildReplayAttentionHotspots", () => {
         severity: 5,
         observation: "This control is unclear.",
       }),
-    ], "arjun", 10);
+    ], "arjun", null, 10);
 
     expect(hotspots.find(({ id }) => id === "attention-blocked")?.severity)
       .toBeGreaterThan(hotspots.find(({ id }) => id === "attention-looking")?.severity ?? 0);
@@ -53,6 +63,6 @@ describe("buildReplayAttentionHotspots", () => {
     expect(buildReplayAttentionHotspots([
       event({ id: "missing", x: undefined, y: undefined }),
       event({ id: "invalid", x: 130, y: -4 }),
-    ], "arjun", 10)).toEqual([]);
+    ], "arjun", null, 10)).toEqual([]);
   });
 });
