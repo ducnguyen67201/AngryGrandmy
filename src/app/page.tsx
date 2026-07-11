@@ -54,6 +54,16 @@ type VoiceReactionPayload = {
   error?: { message?: string };
 };
 
+type LocalizeHotspotsPayload = {
+  data?: VisualHotspot[];
+  meta?: {
+    mode?: string;
+    model?: string | null;
+    fallbackReason?: string | null;
+  };
+  error?: { message?: string };
+};
+
 const TERMINAL_STATUSES = new Set<NormalizedSession["status"]>([
   "completed",
   "timed_out",
@@ -106,6 +116,8 @@ export default function Home() {
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
   const [exportLine, setExportLine] = useState("Report package ready.");
+  const [localizedHotspots, setLocalizedHotspots] = useState<VisualHotspot[] | null>(null);
+  const [heatmapLine, setHeatmapLine] = useState("Heatmap uses deterministic placement until findings are localized.");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [statusLine, setStatusLine] = useState(
     "Mock-first build: real H Company routes can swap in behind this contract.",
@@ -131,10 +143,11 @@ export default function Home() {
     [snapshot.sessions],
   );
   const report = snapshot.report;
-  const hotspots = useMemo(
+  const fallbackHotspots = useMemo(
     () => buildVisualHotspots(snapshot.sessions, snapshot.analysis),
     [snapshot.analysis, snapshot.sessions],
   );
+  const hotspots = localizedHotspots ?? fallbackHotspots;
   const hotspotSummary = useMemo(() => summarizeHotspots(hotspots), [hotspots]);
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
@@ -160,6 +173,14 @@ export default function Home() {
         ? "finalizing"
         : "pending"
     : "final";
+
+  const hotspotLocalizationKey = useMemo(
+    () =>
+      fallbackHotspots
+        .map((hotspot) => `${hotspot.id}:${hotspot.evidence}:${hotspot.recommendation}`)
+        .join("|"),
+    [fallbackHotspots],
+  );
 
   useEffect(() => {
     if (!liveMode || activeSessions.length === 0) return;
@@ -324,6 +345,58 @@ export default function Home() {
     void scoreRun();
   }, [activeSessions.length, liveMode, snapshot.analysis?.personas, snapshot.sessions]);
 
+  useEffect(() => {
+    if (!hotspotLocalizationKey || fallbackHotspots.length === 0) {
+      setLocalizedHotspots(null);
+      setHeatmapLine("Heatmap will localize once friction evidence exists.");
+      return;
+    }
+
+    let cancelled = false;
+    setLocalizedHotspots(null);
+    setHeatmapLine("Localizing hotspot coordinates with model evidence...");
+
+    async function localize() {
+      try {
+        const response = await fetch("/api/localize-hotspots", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessions: snapshot.sessions,
+            analysis: snapshot.analysis,
+          }),
+        });
+        const payload = (await response.json()) as LocalizeHotspotsPayload;
+
+        if (cancelled) return;
+        if (!response.ok || !payload.data) {
+          throw new Error(payload.error?.message ?? "Hotspot localization failed.");
+        }
+
+        setLocalizedHotspots(payload.data);
+        setHeatmapLine(
+          payload.meta?.mode === "openai"
+            ? `Model-localized heatmap (${payload.meta.model ?? "OpenAI"}).`
+            : `Fallback heatmap${payload.meta?.fallbackReason ? `: ${payload.meta.fallbackReason}` : "."}`,
+        );
+      } catch (error) {
+        if (cancelled) return;
+        setLocalizedHotspots(fallbackHotspots);
+        setHeatmapLine(
+          error instanceof Error
+            ? `Fallback heatmap: ${error.message}`
+            : "Fallback heatmap used.",
+        );
+      }
+    }
+
+    void localize();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackHotspots, hotspotLocalizationKey, snapshot.analysis, snapshot.sessions]);
+
   async function handlePlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
@@ -360,6 +433,7 @@ export default function Home() {
         createdAt: now,
         updatedAt: now,
       }));
+      setLocalizedHotspots(null);
       setStatusLine(
         `Generated ${payload.data.analysis.personas.length} personas with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
       );
@@ -392,6 +466,7 @@ export default function Home() {
 
       pendingResultIds.current.clear();
       lastReportKey.current = null;
+      setLocalizedHotspots(null);
       setSnapshot(payload.data);
       setDrawerOpen(false);
       if (payload.meta?.mode === "h-company") {
@@ -744,6 +819,9 @@ export default function Home() {
           <p className="text-3xl font-black">{hotspots.length} hotspots</p>
           <p className="mt-2 text-sm text-ink/66">
             {hotspotSummary.trust} trust, {hotspotSummary.clarity} clarity, {hotspotSummary.navigation} navigation.
+          </p>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink/40">
+            {heatmapLine}
           </p>
         </div>
         <div className="rounded-lg border border-ink/12 bg-white/70 p-5">
