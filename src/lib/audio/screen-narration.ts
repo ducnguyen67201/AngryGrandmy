@@ -21,14 +21,15 @@ type OpenAIResponse = {
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
 const OPENAI_SCREEN_NARRATION_MODEL =
   process.env.OPENAI_SCREEN_NARRATION_MODEL ?? "gpt-4.1-mini";
-const FALLBACK_THOUGHT =
-  "I’m looking at this page now, but I need a moment to understand what I should do next.";
+function fallbackAction(personaName: string) {
+  return `${personaName} is reviewing the current page and looking for the next action.`;
+}
 
 export async function createScreenNarration(
   request: ScreenNarrationRequest,
 ): Promise<ScreenNarrationResult> {
   if (!process.env.OPENAI_API_KEY) {
-    return { source: "fallback", text: FALLBACK_THOUGHT };
+    return { source: "fallback", text: fallbackAction(request.personaName) };
   }
 
   try {
@@ -45,7 +46,7 @@ export async function createScreenNarration(
             role: "system",
             content: [{
               type: "input_text",
-              text: "You are narrating a live usability test. Identify the single visible UI element the persona is currently considering, then describe one immediate first-person thought grounded only in the screenshot. Return JSON with text (8-24 spoken words), x, and y. x/y are the element center as percentages of the full screenshot from 0 to 100. If no specific element is relevant, omit x/y.",
+              text: "You are narrating a live computer-use replay. Identify the single visible UI element or page region the persona is acting on, then describe the visible action in third person. Do not quote the persona profile, hidden thoughts, or prewritten findings. Return JSON with text (8-24 spoken words), x, and y. x/y are the element center as percentages of the full screenshot from 0 to 100. If no specific element is relevant, omit x/y.",
             }],
           },
           {
@@ -64,10 +65,10 @@ export async function createScreenNarration(
       }),
       signal: AbortSignal.timeout(25_000),
     });
-    if (!response.ok) return { source: "fallback", text: FALLBACK_THOUGHT };
+    if (!response.ok) return { source: "fallback", text: fallbackAction(request.personaName) };
 
     const content = readOpenAIText((await response.json()) as OpenAIResponse)?.trim();
-    if (!content) return { source: "fallback", text: FALLBACK_THOUGHT };
+    if (!content) return { source: "fallback", text: fallbackAction(request.personaName) };
     const parsed = parseNarrationContent(content);
     if (!parsed) return { source: "openai", text: content.slice(0, 300) };
     return {
@@ -78,7 +79,7 @@ export async function createScreenNarration(
         : {}),
     };
   } catch {
-    return { source: "fallback", text: FALLBACK_THOUGHT };
+    return { source: "fallback", text: fallbackAction(request.personaName) };
   }
 }
 

@@ -34,15 +34,15 @@ export function shouldPrimeReplayNarration({
   enabled,
   frameCount,
   selectedPersonaId,
-  narration,
+  hasViewportImage,
 }: {
   enabled: boolean;
   frameCount: number;
   selectedPersonaId: string | null | undefined;
-  narration: string | null | undefined;
+  hasViewportImage: boolean;
 }) {
   return Boolean(
-    enabled && frameCount > 0 && selectedPersonaId && narration?.trim(),
+    enabled && frameCount > 0 && selectedPersonaId && hasViewportImage,
   );
 }
 
@@ -124,24 +124,7 @@ export function getScreenNarrationCandidate({
       Boolean(event.imageUrl) &&
       !processedEventIds.has(event.id),
   ) ?? null;
-  if (!candidate) return null;
-
-  if (events.some(
-    (event) =>
-      event.personaId === selectedPersonaId &&
-      event.type === "narration" &&
-      event.cursor === candidate.cursor &&
-      Boolean(event.text?.trim()) &&
-      validPercent(event.x) &&
-      validPercent(event.y),
-  )) {
-    return null;
-  }
   return candidate;
-}
-
-function validPercent(value: number | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
 }
 
 export function getReplayNarrationsForFrame({

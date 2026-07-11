@@ -15,6 +15,7 @@ import {
   shouldSpeakCurrentNarrationOnEnable,
   shouldPrimeReplayNarration,
   shouldEnableLiveVoiceForDispatch,
+  type ScreenNarrationEvent,
   type LiveVoiceQueueItem,
 } from "@/lib/audio/live-voice-queue";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
@@ -190,7 +191,7 @@ export default function Home() {
   const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
   const [liveVoiceEnabled, setLiveVoiceEnabled] = useState(false);
   const [liveVoiceLine, setLiveVoiceLine] = useState(
-    "Enable live voice to hear new agent thoughts.",
+    "Enable live voice to hear screen action narration.",
   );
   const [exportLine, setExportLine] = useState("Report package ready.");
   const [localizedHotspots, setLocalizedHotspots] = useState<VisualHotspot[] | null>(null);
@@ -500,7 +501,7 @@ export default function Home() {
     const next = liveVoiceQueueRef.current.shift();
     if (!next) {
       setLiveVoiceLine(
-        `Listening for ${selectedPersona?.displayName ?? "the selected persona"}...`,
+        `Watching ${selectedPersona?.displayName ?? "the selected persona"}'s screen...`,
       );
       return;
     }
@@ -527,7 +528,7 @@ export default function Home() {
       utterance.pitch = 1.05;
       utterance.onend = finish;
       utterance.onerror = () => {
-        setLiveVoiceLine("Browser speech failed. Try Speak this finding again.");
+        setLiveVoiceLine("Browser speech failed. Try narrating the screen again.");
         finish();
       };
       window.speechSynthesis.cancel();
@@ -591,14 +592,14 @@ export default function Home() {
       liveVoiceEnabledRef.current = true;
       setLiveVoiceEnabled(true);
       setLiveVoiceLine(
-        `Listening for ${selectedPersona?.displayName ?? "the selected persona"}'s next thought...`,
+        `Watching ${selectedPersona?.displayName ?? "the selected persona"}'s screen...`,
       );
-      if (shouldSpeakCurrentNarrationOnEnable({
+      if (!liveViewport?.imageUrl && shouldSpeakCurrentNarrationOnEnable({
         runComplete,
         selectedPersonaId: selectedPersona?.id,
         narration: selectedNarration,
       }) && selectedPersona) {
-        setLiveVoiceLine(`Preparing ${selectedPersona.displayName}'s current finding...`);
+        setLiveVoiceLine(`No screen frame is available, so preparing ${selectedPersona.displayName}'s finding...`);
         const voiceItem = await synthesizeVoiceItem({
           eventId: `voice-enable:${selectedSession?.sessionId ?? selectedPersona.id}:${selectedNarration}`,
           personaId: selectedPersona.id,
@@ -606,7 +607,7 @@ export default function Home() {
           text: selectedNarration,
         });
         if (voiceItem) queueLiveVoiceItem(voiceItem);
-        else setLiveVoiceLine("Could not prepare speech. Use Speak this finding again.");
+        else setLiveVoiceLine("Could not prepare speech. Try narrating the screen again.");
       }
     } catch {
       liveVoiceEnabledRef.current = false;
@@ -615,6 +616,7 @@ export default function Home() {
     }
   }, [
     queueLiveVoiceItem,
+    liveViewport?.imageUrl,
     runComplete,
     selectedNarration,
     selectedPersona,
@@ -637,7 +639,11 @@ export default function Home() {
 
     replaySpokenEventIds.current.clear();
     screenNarratedEventIds.current.clear();
+    lastScreenNarrationAt.current = 0;
     stopLiveVoicePlayback("Preparing synchronized replay narration...");
+    const replayStartFrame = activeViewportFrameIndex >= viewportFrames.length - 1
+      ? viewportFrames[0]
+      : liveViewport;
     if (activeViewportFrameIndex >= viewportFrames.length - 1) {
       setReplayFrameIndex(0);
     }
@@ -646,25 +652,19 @@ export default function Home() {
       enabled: liveVoiceEnabledRef.current,
       frameCount: viewportFrames.length,
       selectedPersonaId: selectedPersona?.id,
-      narration: selectedNarration,
+      hasViewportImage: Boolean(replayStartFrame?.imageUrl),
     })) {
-      const primer = createLiveVoiceQueueItem({
-        eventId: `replay-primer:${selectedSession?.sessionId ?? selectedPersona?.id ?? "persona"}`,
-        audioSrc: null,
-        transcript: selectedNarration,
-      });
-      if (primer) queueLiveVoiceItem(primer);
+      setLiveVoiceLine(`Preparing ${selectedPersona?.displayName ?? "the selected persona"}'s screen narration...`);
     }
   }, [
     activeViewportFrameIndex,
     handleLiveVoiceToggle,
-    queueLiveVoiceItem,
+    liveViewport,
     replayPlaying,
-    selectedNarration,
     selectedPersona?.id,
-    selectedSession?.sessionId,
+    selectedPersona?.displayName,
     stopLiveVoicePlayback,
-    viewportFrames.length,
+    viewportFrames,
   ]);
   const completedWithFindings = snapshot.sessions.filter(
     (session) => session.finding,
@@ -717,6 +717,7 @@ export default function Home() {
     ) {
       return;
     }
+    if (liveViewport.imageUrl) return;
 
     const previousCursor =
       activeViewportFrameIndex > 0
@@ -744,7 +745,7 @@ export default function Home() {
           }
         })
         .catch(() => {
-          setLiveVoiceLine("Replay narration failed. Continuing visual replay...");
+          setLiveVoiceLine("Replay fallback narration failed. Continuing visual replay...");
         });
     }
   }, [
@@ -782,14 +783,6 @@ export default function Home() {
       processedEventIds: screenNarratedEventIds.current,
     });
     if (!candidate?.imageUrl) return;
-    const existingFrameNarration = eventsAtCurrentFrame.find(
-      (event) =>
-        event.personaId === selectedPersona.id &&
-        event.type === "narration" &&
-        event.cursor === candidate.cursor &&
-        Boolean(event.text?.trim()),
-    );
-
     const now = Date.now();
     if (now - lastScreenNarrationAt.current < 6_000) return;
     lastScreenNarrationAt.current = now;
@@ -812,7 +805,7 @@ export default function Home() {
       .then(async (response) => {
         const payload = (await response.json()) as ScreenNarrationPayload;
         if (!response.ok || !payload.data?.text || cancelled) return null;
-        const narrationText = existingFrameNarration?.text ?? payload.data.text;
+        const narrationText = payload.data.text;
         const narrationEvent: AgentRuntimeEvent = {
           id: narrationId,
           sessionId: candidate.sessionId ?? selectedSession?.sessionId ?? candidate.id,
@@ -831,14 +824,12 @@ export default function Home() {
               }
             : {}),
         };
-        const voiceItem = existingFrameNarration
-          ? null
-          : await synthesizeVoiceItem({
-              eventId: narrationId,
-              personaId: selectedPersona.id,
-              voiceSlot: selectedPersona.voiceSlot,
-              text: narrationText,
-            });
+        const voiceItem = await synthesizeVoiceItem({
+          eventId: narrationId,
+          personaId: selectedPersona.id,
+          voiceSlot: selectedPersona.voiceSlot,
+          text: narrationText,
+        });
         return { narrationEvent, voiceItem };
       })
       .then((result) => {
@@ -1014,7 +1005,7 @@ export default function Home() {
   useEffect(() => {
     if (!liveVoiceEnabledRef.current) return;
     stopLiveVoicePlayback(
-      `Listening for ${selectedPersona?.displayName ?? "the selected persona"}'s next thought...`,
+      `Watching ${selectedPersona?.displayName ?? "the selected persona"}'s screen...`,
     );
   }, [
     selectedPersona?.displayName,
@@ -1144,10 +1135,10 @@ export default function Home() {
             if (voiceItem) {
               queueLiveVoiceItem(voiceItem);
             } else {
-              setLiveVoiceLine("Gradium did not return audio. Listening for the next thought...");
+              setLiveVoiceLine("Gradium did not return audio. Watching for the next screen action...");
             }
           } catch {
-            setLiveVoiceLine("Live voice request failed. Listening for the next thought...");
+            setLiveVoiceLine("Live voice request failed. Watching for the next screen action...");
           }
         }
 
@@ -1461,8 +1452,8 @@ export default function Home() {
     liveVoiceAudioCacheRef.current.clear();
     stopLiveVoicePlayback(
       liveVoiceEnabledRef.current
-        ? `Listening for ${personasToLaunch[0]?.displayName ?? "the selected persona"}'s first thought...`
-        : "Enable live voice to hear new agent thoughts.",
+        ? `Watching ${personasToLaunch[0]?.displayName ?? "the selected persona"}'s screen...`
+        : "Enable live voice to hear screen action narration.",
     );
     setLiveEvents([]);
     setSnapshot((current) => ({
@@ -1576,7 +1567,7 @@ export default function Home() {
     liveVoiceAudioCacheRef.current.clear();
     liveVoiceEnabledRef.current = false;
     setLiveVoiceEnabled(false);
-    stopLiveVoicePlayback("Enable live voice to hear new agent thoughts.");
+    stopLiveVoicePlayback("Enable live voice to hear screen action narration.");
     setSnapshot(createInitialRun());
     setTargetUrl("");
     setObjective(DEFAULT_OBJECTIVE);
@@ -1600,11 +1591,64 @@ export default function Home() {
 
   async function handleVoice() {
     if (!selectedPersona || voiceLoading) return;
+    if (liveViewport?.imageUrl) {
+      await playScreenNarrationVoice(liveViewport);
+      return;
+    }
     await playPersonaVoice(
       selectedPersona.id,
       selectedPersona.voiceSlot,
       selectedNarration,
     );
+  }
+
+  async function playScreenNarrationVoice(frame: ScreenNarrationEvent) {
+    if (!selectedPersona || voiceLoading || !frame.imageUrl) return;
+
+    setVoiceLoading(true);
+    setVoiceLine("Preparing screen action narration...");
+
+    try {
+      const response = await fetch("/api/screen-narration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: frame.imageUrl,
+          personaName: selectedPersona.displayName,
+          personaDescription: `${selectedPersona.tagline}. ${selectedPersona.context}. ${selectedPersona.behaviors.join(" ")}`,
+          objective: snapshot.objective ?? objective,
+          currentUrl: frame.currentUrl ?? snapshot.url,
+        }),
+      });
+      const payload = (await response.json()) as ScreenNarrationPayload;
+      if (!response.ok || !payload.data?.text) {
+        throw new Error(payload.error?.message ?? "Screen narration failed.");
+      }
+
+      const voiceItem = await synthesizeVoiceItem({
+        eventId: `manual-screen-narration:${frame.id}:${Date.now()}`,
+        personaId: selectedPersona.id,
+        voiceSlot: selectedPersona.voiceSlot,
+        text: payload.data.text,
+      });
+      if (!voiceItem) throw new Error("Voice generation failed.");
+
+      if (voiceItem.audioSrc) {
+        await new Audio(voiceItem.audioSrc).play();
+        setVoiceLine("Screen action narration played.");
+      } else {
+        speakWithBrowser(voiceItem.transcript);
+        setVoiceLine("Browser voice narrated the screen action.");
+      }
+    } catch (error) {
+      setVoiceLine(
+        error instanceof Error
+          ? `${error.message} Try enabling live voice and replaying.`
+          : "Could not narrate this screen.",
+      );
+    } finally {
+      setVoiceLoading(false);
+    }
   }
 
   async function playPersonaVoice(
@@ -1647,7 +1691,7 @@ export default function Home() {
         );
       } else {
         speakWithBrowser(payload.data.transcript);
-        setVoiceLine("Gradium fallback: browser voice spoke the finding.");
+        setVoiceLine("Gradium fallback: browser voice spoke the selected line.");
       }
     } catch (error) {
       speakWithBrowser(text);
@@ -2341,7 +2385,7 @@ export default function Home() {
               type="button"
             >
               <Volume2 size={17} />
-              {voiceLoading ? "Voicing..." : "Speak Finding"}
+              {voiceLoading ? "Voicing..." : liveViewport?.imageUrl ? "Narrate Screen" : "Speak Finding"}
             </button>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
               {voiceLine}
@@ -2733,7 +2777,7 @@ export default function Home() {
               <div className="live-provider-controls">
                 <div className="provider-badges">
                   <span><i className={runComplete ? "done" : "connected"} />H Company · {dispatching ? "connecting" : replayMode ? "replay" : runComplete ? "complete" : "status connected"}</span>
-                  <span>Gradium · {hasLiveNarration ? "live event voice" : "persona/finding voice"}</span>
+                  <span>Gradium · {liveViewport?.imageUrl ? "screen action voice" : hasLiveNarration ? "live event voice" : "finding voice"}</span>
                   <button
                     aria-pressed={liveVoiceEnabled}
                     className="live-voice-toggle"
@@ -2874,10 +2918,10 @@ export default function Home() {
                     </div>
                   ) : null}
                   <div className="thought-annotation">
-                    <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
+                    <span><Volume2 size={12} /> {liveViewport?.imageUrl ? "Screen action narration" : hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
                     <blockquote>“{selectedNarration}”</blockquote>
                     <button disabled={voiceLoading || !selectedPersona} onClick={handleVoice} type="button">
-                      {voiceLoading ? "Preparing…" : liveVoiceEnabled ? runComplete ? "Speak this finding again" : "Speak this thought" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
+                      {voiceLoading ? "Preparing..." : liveViewport?.imageUrl ? "Narrate this screen" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
                     </button>
                   </div>
                   {selectedFriction ? (
