@@ -36,8 +36,9 @@ export default function Home() {
           <div className="hero-copy">
             <p className="eyebrow"><Sparkles size={14} /> Synthetic usability lab</p>
             <h1>
-              Watch real-world personas
-              <span>test every path.</span>
+              <span className="hero-title-line">Watch real-world</span>
+              <span className="hero-title-line">personas</span>
+              <em>test every path.</em>
             </h1>
             <p className="hero-description">
               Four computer-use agents explore your product as different people. See where they
@@ -69,6 +70,21 @@ export default function Home() {
           </div>
 
           <AnimatedAgentJourney snapshot={snapshot} />
+        </div>
+
+        <div className="signal-bridge" aria-label="Live trajectory becomes an evidence-backed report">
+          <div className="signal-bridge-copy">
+            <span>Live observation</span>
+            <i aria-hidden="true" />
+            <span>Normalized evidence</span>
+            <i aria-hidden="true" />
+            <strong>Product decision</strong>
+          </div>
+          <div className="signal-bridge-metrics">
+            <span><b>04</b> personas</span>
+            <span><b>27</b> actions watched</span>
+            <span><b>03</b> shared signals</span>
+          </div>
         </div>
       </section>
 

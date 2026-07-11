@@ -17,6 +17,13 @@ const steps = [
 
 const personaColors = ["#b890ff", "#55d8c1", "#ffbb66", "#ff756d"];
 
+const actorAccents = {
+  linda: "#b890ff",
+  rosa: "#55d8c1",
+  mei: "#ffbb66",
+  joan: "#ff756d",
+} as const;
+
 export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
   const reduceMotion = useReducedMotion();
   const [activeStep, setActiveStep] = useState(3);
@@ -43,6 +50,7 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
     >
       <div className="journey-aurora" aria-hidden="true" />
       <div className="journey-grid" aria-hidden="true" />
+      <div className="journey-scan" aria-hidden="true" />
 
       <div className="journey-toolbar">
         <div>
@@ -123,8 +131,17 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         ))}
       </svg>
 
+      <div className="observation-prism" aria-hidden="true">
+        <i className="prism-orbit prism-orbit-outer" />
+        <i className="prism-orbit prism-orbit-inner" />
+        <span className="prism-core" />
+        <b>Friction<br />captured</b>
+      </div>
+
       <BrowserCard
         activity="Scanning results"
+        actor="Rosa"
+        accent={actorAccents.rosa}
         className="journey-card-search"
         cursorPath={{ x: [18, 72, 46, 80, 18], y: [52, 52, 72, 82, 52] }}
         delay={0}
@@ -138,6 +155,8 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
 
       <BrowserCard
         activity="Comparing options"
+        actor="Linda"
+        accent={actorAccents.linda}
         className="journey-card-options"
         cursorPath={{ x: [18, 48, 76, 48, 18], y: [62, 62, 62, 84, 62] }}
         delay={0.8}
@@ -153,6 +172,8 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
 
       <BrowserCard
         activity="Entering details"
+        actor="Mei"
+        accent={actorAccents.mei}
         className="journey-card-form"
         cursorPath={{ x: [76, 45, 30, 72, 76], y: [78, 50, 50, 79, 78] }}
         delay={1.6}
@@ -166,6 +187,8 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
 
       <BrowserCard
         activity="Waiting for context"
+        actor="Joan"
+        accent={actorAccents.joan}
         className="journey-card-blocked"
         cursorPath={{ x: [72, 34, 34, 64, 72], y: [72, 48, 48, 72, 72] }}
         delay={2.4}
@@ -179,6 +202,8 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
 
       <BrowserCard
         activity="Reviewing summary"
+        actor="Rosa"
+        accent={actorAccents.rosa}
         className="journey-card-success"
         cursorPath={{ x: [78, 24, 62, 74, 78], y: [74, 48, 58, 80, 74] }}
         delay={3.2}
@@ -253,12 +278,20 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
           })}
         </div>
       </div>
+
+      <div className="stage-telemetry" aria-hidden="true">
+        <span><i /> Vision online</span>
+        <span>5 screenshots/min</span>
+        <span>Permission verified</span>
+      </div>
     </section>
   );
 }
 
 function BrowserCard({
+  accent,
   activity,
+  actor,
   children,
   className,
   cursorPath,
@@ -266,7 +299,9 @@ function BrowserCard({
   mode,
   title,
 }: {
+  accent: string;
   activity: string;
+  actor: string;
   children: React.ReactNode;
   className: string;
   cursorPath: { x: number[]; y: number[] };
@@ -279,6 +314,7 @@ function BrowserCard({
   return (
     <motion.article
       className={`journey-browser-card ${className}`}
+      style={{ "--actor-accent": accent } as React.CSSProperties}
       animate={reduceMotion ? undefined : { y: [0, -5, 0] }}
       transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
     >
@@ -290,6 +326,7 @@ function BrowserCard({
         {children}
         <ComputerUseActor
           activity={activity}
+          actor={actor}
           cursorPath={cursorPath}
           delay={delay}
           mode={mode}
@@ -301,11 +338,13 @@ function BrowserCard({
 
 function ComputerUseActor({
   activity,
+  actor,
   cursorPath,
   delay,
   mode,
 }: {
   activity: string;
+  actor: string;
   cursorPath: { x: number[]; y: number[] };
   delay: number;
   mode: "scan" | "click" | "type" | "pause" | "review";
@@ -323,7 +362,7 @@ function ComputerUseActor({
       </div>
       {mode === "scan" && <div aria-hidden="true" className="agent-scan-line" />}
       <motion.div
-        aria-label={`Computer-use agent: ${activity}`}
+        aria-label={`Computer-use agent ${actor}: ${activity}`}
         className={`in-window-agent in-window-agent-${mode}`}
         style={{ left: startX, top: startY }}
         animate={
@@ -342,6 +381,9 @@ function ComputerUseActor({
           times: [0, 0.3, 0.52, 0.78, 1],
         }}
       >
+        <span aria-hidden="true" className="in-window-agent-label">{actor} · live</span>
+        <span aria-hidden="true" className="cursor-trail cursor-trail-one" />
+        <span aria-hidden="true" className="cursor-trail cursor-trail-two" />
         <span aria-hidden="true" className="in-window-click" />
         <MousePointer2 aria-hidden="true" size={14} strokeWidth={2.4} />
       </motion.div>

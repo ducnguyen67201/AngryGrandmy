@@ -73,7 +73,7 @@ a:focus-visible {
 .hero-layout {
   width: min(1440px, calc(100% - 64px)); margin: 0 auto; padding: 52px 0 80px;
   display: grid; grid-template-columns: minmax(370px, 0.75fr) minmax(640px, 1.25fr);
-  align-items: center; gap: 54px;
+  align-items: center; gap: 38px;
 }
 .hero-copy { position: relative; z-index: 5; }
 .eyebrow {
@@ -85,7 +85,16 @@ a:focus-visible {
   max-width: 640px; margin: 0; font-size: clamp(48px, 5.1vw, 78px);
   line-height: 0.98; letter-spacing: -0.055em; font-weight: 850;
 }
-.hero-copy h1 span {
+.hero-copy h1 .hero-title-line {
+  display: block;
+  color: var(--paper);
+  background: none;
+  font-family: inherit;
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: -0.055em;
+}
+.hero-copy h1 em {
   display: block; padding: 6px 0 13px;
   color: transparent; background: linear-gradient(90deg, #b890ff 2%, #6f9dff 52%, #50d7df);
   background-clip: text; -webkit-background-clip: text;
@@ -140,6 +149,11 @@ a:focus-visible {
   content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background: linear-gradient(90deg, transparent 70%, rgba(4, 8, 22, 0.5));
 }
+.journey-stage::before {
+  content: ""; position: absolute; z-index: 2; inset: 0; pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(150, 185, 255, .035), inset 0 -90px 120px rgba(2, 7, 20, .38);
+}
 .journey-aurora {
   position: absolute; z-index: -2; width: 55%; aspect-ratio: 1; top: 24%; left: 22%;
   border-radius: 50%; filter: blur(70px); opacity: 0.22;
@@ -151,6 +165,12 @@ a:focus-visible {
   background-image: linear-gradient(rgba(105, 139, 211, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(105, 139, 211, 0.08) 1px, transparent 1px);
   background-size: 44px 44px; mask-image: linear-gradient(to bottom, transparent, black 20%, black 78%, transparent);
   transform: perspective(500px) rotateX(12deg) scale(1.1);
+}
+.journey-scan {
+  position: absolute; z-index: 2; top: 13%; bottom: 10%; left: -12%; width: 22%;
+  pointer-events: none; opacity: .55; transform: skewX(-14deg);
+  background: linear-gradient(90deg, transparent, rgba(90, 194, 255, .055), rgba(120, 135, 255, .14), transparent);
+  filter: blur(1px); animation: stage-scan 9s cubic-bezier(.55, 0, .35, 1) infinite;
 }
 .journey-toolbar {
   position: absolute; z-index: 12; left: 3.5%; right: 3.5%; top: 4%;
@@ -172,9 +192,13 @@ a:focus-visible {
 
 .journey-browser-card {
   position: absolute; z-index: 4; overflow: hidden; color: #18223a;
-  border: 1px solid rgba(144, 177, 245, .55); border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--actor-accent) 60%, #a9c4ff); border-radius: 10px;
   background: #e9eef9; box-shadow: 0 16px 32px rgba(0,0,0,.38), 0 0 24px rgba(62, 126, 255, .16);
   transform: perspective(500px) rotateX(2deg) rotateY(-3deg);
+}
+.journey-browser-card::after {
+  content: ""; position: absolute; inset: 0; z-index: 8; pointer-events: none; opacity: .28;
+  border-radius: inherit; box-shadow: inset 2px 0 var(--actor-accent), inset 0 0 18px color-mix(in srgb, var(--actor-accent) 12%, transparent);
 }
 .journey-card-search { width: 22%; left: 2%; top: 21%; }
 .journey-card-options { width: 21%; left: 42%; top: 14%; animation-delay: -1.4s; }
@@ -214,9 +238,19 @@ a:focus-visible {
 .computer-use-review > span { background: #7b9fff; box-shadow: 0 0 5px #7b9fff; }
 .in-window-agent {
   position: absolute; z-index: 6; width: 16px; height: 16px; pointer-events: none;
-  color: #fff; filter: drop-shadow(0 1px 2px rgba(5, 10, 30, .85));
+  color: #fff; filter: drop-shadow(0 1px 2px rgba(5, 10, 30, .85)) drop-shadow(0 0 5px var(--actor-accent));
   transform: translate(-2px, -2px);
 }
+.in-window-agent-label {
+  position: absolute; z-index: 5; left: 11px; top: 12px; padding: 2px 4px;
+  color: #081024; border-radius: 4px; background: var(--actor-accent);
+  box-shadow: 0 2px 7px rgba(8, 16, 36, .25); font-size: 5px; line-height: 1; font-weight: 950;
+}
+.cursor-trail {
+  position: absolute; z-index: 0; width: 3px; height: 3px; border-radius: 50%;
+  background: var(--actor-accent); opacity: .55; transform: translate(-6px, -6px);
+}
+.cursor-trail-two { width: 2px; height: 2px; opacity: .25; transform: translate(-10px, -10px); }
 .in-window-agent > svg { position: relative; z-index: 2; display: block; fill: rgba(255,255,255,.2); }
 .in-window-click {
   position: absolute; z-index: 1; width: 11px; height: 11px; left: -3px; top: -3px;
@@ -232,6 +266,28 @@ a:focus-visible {
   border-top: 1px solid rgba(70, 139, 255, .55);
   background: linear-gradient(to bottom, rgba(78, 145, 255, .12), transparent);
   animation: agent-scan 2.7s ease-in-out infinite;
+}
+
+.observation-prism {
+  position: absolute; z-index: 6; left: 37.5%; top: 49.2%; width: 64px; height: 64px;
+  display: grid; place-items: center; pointer-events: none; transform: translate(-50%, -50%);
+}
+.prism-orbit { position: absolute; border-radius: 50%; }
+.prism-orbit-outer {
+  inset: 0; border: 1px solid rgba(120, 210, 255, .38); border-left-color: #58d8d1;
+  border-right-color: #a66cff; box-shadow: 0 0 24px rgba(83, 137, 255, .22); animation: prism-spin 7s linear infinite;
+}
+.prism-orbit-inner {
+  inset: 9px; border: 1px dashed rgba(226, 243, 255, .58); animation: prism-spin-reverse 4.5s linear infinite;
+}
+.prism-core {
+  width: 21px; height: 21px; border: 1px solid rgba(255,255,255,.7); border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, white 0 8%, #75ddf2 25%, #656dff 58%, #a553db 100%);
+  box-shadow: 0 0 8px white, 0 0 32px #6298ff, 0 0 60px rgba(139, 78, 255, .65); animation: prism-breathe 2.8s ease-in-out infinite;
+}
+.observation-prism b {
+  position: absolute; left: 52px; top: 12px; width: 76px; color: #b9c9e8;
+  font-size: 6px; line-height: 1.4; letter-spacing: .12em; text-transform: uppercase;
 }
 
 .persona-observation {
@@ -265,6 +321,14 @@ a:focus-visible {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   border: 1px solid rgba(132, 158, 218, .16); border-radius: 12px; background: rgba(5, 13, 32, .82); backdrop-filter: blur(14px);
 }
+.stage-telemetry {
+  position: absolute; z-index: 12; left: 37%; right: 22%; top: 4%;
+  display: flex; align-items: center; justify-content: center; gap: 11px;
+  color: #61708e; font-size: 5.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+}
+.stage-telemetry span { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.stage-telemetry span + span::before { content: "/"; margin-right: 7px; color: #2e3d5e; }
+.stage-telemetry i { width: 4px; height: 4px; border-radius: 50%; background: #55d8c1; box-shadow: 0 0 7px #55d8c1; }
 .persona-dock-label { color: #8391ae; font-size: 7px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
 .persona-list { display: flex; gap: 12px; min-width: 0; }
 .persona-chip { display: flex; align-items: center; gap: 5px; min-width: 0; }
@@ -272,6 +336,26 @@ a:focus-visible {
 .persona-chip b, .persona-chip small { display: block; line-height: 1.2; }
 .persona-chip b { font-size: 7px; }
 .persona-chip small { margin-top: 2px; color: #74819b; font-size: 6px; }
+
+.signal-bridge {
+  position: relative; z-index: 10; width: min(1180px, calc(100% - 64px)); min-height: 72px;
+  margin: -36px auto 0; padding: 0 20px 0 26px; display: flex; align-items: center; justify-content: space-between; gap: 28px;
+  border: 1px solid rgba(116, 146, 210, .18); border-radius: 15px;
+  background: linear-gradient(90deg, rgba(7, 16, 38, .94), rgba(12, 24, 53, .96));
+  box-shadow: 0 24px 70px rgba(0,0,0,.28); backdrop-filter: blur(18px);
+}
+.signal-bridge::after {
+  content: ""; position: absolute; z-index: -1; left: 22%; right: 26%; bottom: -1px; height: 1px;
+  background: linear-gradient(90deg, transparent, #55d8c1, #6d87ff, #ac63ff, transparent);
+  box-shadow: 0 0 14px #618aff; animation: bridge-pulse 3.6s ease-in-out infinite;
+}
+.signal-bridge-copy, .signal-bridge-metrics { display: flex; align-items: center; }
+.signal-bridge-copy { gap: 11px; color: #6f7f9f; font-size: 9px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.signal-bridge-copy i { width: 40px; height: 1px; overflow: visible; background: linear-gradient(90deg, #32536f, #64cce0); }
+.signal-bridge-copy strong { color: #dbe6fb; }
+.signal-bridge-metrics { gap: 18px; }
+.signal-bridge-metrics span { color: #6f7e9c; font-size: 8px; text-transform: uppercase; letter-spacing: .05em; }
+.signal-bridge-metrics b { margin-right: 4px; color: #d5e2fa; font-size: 15px; letter-spacing: -.04em; }
 
 .results-section { padding: 110px max(32px, calc((100% - 1180px) / 2)); background: #f4f6fb; color: #111a2e; }
 .section-heading { max-width: 680px; text-align: center; margin: 0 auto 48px; }
@@ -314,6 +398,11 @@ a:focus-visible {
   72% { opacity: .55; }
   85% { top: 82%; opacity: 0; }
 }
+@keyframes stage-scan { 0%, 8% { left: -22%; opacity: 0; } 20% { opacity: .55; } 78% { opacity: .4; } 92%, 100% { left: 110%; opacity: 0; } }
+@keyframes prism-spin { to { transform: rotate(360deg); } }
+@keyframes prism-spin-reverse { to { transform: rotate(-360deg); } }
+@keyframes prism-breathe { 50% { transform: scale(.82); filter: saturate(1.35); } }
+@keyframes bridge-pulse { 0%, 100% { opacity: .35; transform: scaleX(.75); } 50% { opacity: 1; transform: scaleX(1); } }
 
 @media (max-width: 1180px) {
   .hero-layout { grid-template-columns: 1fr; width: min(920px, calc(100% - 48px)); padding-top: 40px; }
@@ -345,6 +434,16 @@ a:focus-visible {
   .persona-dock-label { display: none; }
   .persona-list { width: 100%; justify-content: space-between; gap: 4px; }
   .persona-chip small { display: none; }
+  .stage-telemetry { display: none; }
+  .observation-prism { width: 52px; height: 52px; }
+  .prism-orbit-inner { inset: 7px; }
+  .observation-prism b { display: none; }
+  .signal-bridge { width: calc(100% - 28px); margin-top: -24px; padding: 14px; display: block; }
+  .signal-bridge-copy { justify-content: center; font-size: 7px; }
+  .signal-bridge-copy i { width: 18px; }
+  .signal-bridge-metrics { margin-top: 12px; justify-content: space-around; gap: 8px; }
+  .signal-bridge-metrics span { font-size: 6px; }
+  .signal-bridge-metrics b { font-size: 12px; }
   .results-section, .insight-section { padding-left: 20px; padding-right: 20px; }
   .result-cards, .insight-section { grid-template-columns: 1fr; }
   .insight-section { gap: 48px; }
