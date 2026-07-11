@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
 import {
   DEFAULT_TESTER_COUNT,
+  getDispatchedPersonas,
   getTesterCountFromRequest,
   limitPersonasForTesterCount,
 } from "./tester-count";
@@ -22,5 +23,17 @@ describe("tester count controls", () => {
     const personas = limitPersonasForTesterCount(analysis!, 2);
 
     expect(personas.map((persona) => persona.displayName)).toEqual(["Linda", "Rosa"]);
+  });
+
+  it("shows only personas that have a dispatched session in the run view", () => {
+    const snapshot = createDemoRun();
+    expect(snapshot.analysis).not.toBeNull();
+
+    const personas = getDispatchedPersonas(
+      snapshot.analysis!,
+      snapshot.sessions.slice(0, 1),
+    );
+
+    expect(personas.map((persona) => persona.displayName)).toEqual(["Linda"]);
   });
 });
