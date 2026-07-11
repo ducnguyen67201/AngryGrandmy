@@ -388,19 +388,30 @@ export default function Home() {
   const liveViewport = viewportFrames[activeViewportFrameIndex];
   const eventCursorLimit =
     replayFrameIndex === null ? Number.POSITIVE_INFINITY : liveViewport?.cursor ?? 0;
+  const previousReplayCursor =
+    replayFrameIndex !== null && activeViewportFrameIndex > 0
+      ? viewportFrames[activeViewportFrameIndex - 1]?.cursor ?? null
+      : null;
+  const isEventInReplayFrame = useCallback(
+    (event: { cursor: number }) =>
+      replayFrameIndex === null ||
+      (event.cursor <= eventCursorLimit &&
+        (previousReplayCursor === null || event.cursor > previousReplayCursor)),
+    [eventCursorLimit, previousReplayCursor, replayFrameIndex],
+  );
   const liveNarration = [...liveEvents].reverse().find(
     (event) =>
       event.type === "narration" &&
       event.personaId === selectedPersona?.id &&
-      event.cursor <= eventCursorLimit,
+      isEventInReplayFrame(event),
   );
   const liveFrustration = [...liveEvents].reverse().find(
     (event) =>
       event.type === "frustration" &&
       event.personaId === selectedPersona?.id &&
-      event.cursor <= eventCursorLimit,
+      isEventInReplayFrame(event),
   );
-  const selectedHotspots = displayedHotspots.filter(
+  const selectedSummaryHotspots = displayedHotspots.filter(
     (hotspot) => hotspot.personaId === selectedPersona?.id,
   );
   const replayAttentionHotspots = useMemo(
@@ -410,10 +421,13 @@ export default function Home() {
         : buildReplayAttentionHotspots(
             liveEvents,
             selectedPersona?.id,
+            previousReplayCursor,
             eventCursorLimit,
           ),
-    [eventCursorLimit, liveEvents, replayFrameIndex, selectedPersona?.id],
+    [eventCursorLimit, liveEvents, previousReplayCursor, replayFrameIndex, selectedPersona?.id],
   );
+  const selectedHotspots =
+    replayFrameIndex === null ? selectedSummaryHotspots : replayAttentionHotspots;
   const agentCursorPoint = selectedPersona
     ? getAgentCursorForFrame({
         events: liveEvents,
@@ -429,11 +443,15 @@ export default function Home() {
   const hasLiveNarration = Boolean(liveNarration?.text);
   const selectedNarration =
     liveNarration?.text ??
-    selectedSession?.finding?.frictionEvents[0]?.narratedObservation ??
-    selectedSession?.finding?.summary ??
+    (replayFrameIndex === null
+      ? selectedSession?.finding?.frictionEvents[0]?.narratedObservation ??
+        selectedSession?.finding?.summary
+      : liveViewport?.imageUrl
+        ? `${selectedPersona?.displayName ?? "The agent"} is moving through this screen.`
+        : null) ??
     selectedPersona?.introLine ??
     "No persona finding is ready yet.";
-  const selectedFriction = liveFrustration ? {step:liveFrustration.step,category:liveFrustration.category??"clarity",severity:liveFrustration.severity??3,observation:liveFrustration.observation??"Usability barrier",visibleEvidence:liveFrustration.visibleEvidence??"Live agent evidence",recommendation:liveFrustration.recommendation??"Remove this barrier",narratedObservation:liveFrustration.observation??"This is frustrating",recovered:false} : selectedSession?.finding?.frictionEvents[0] ?? null;
+  const selectedFriction = liveFrustration ? {step:liveFrustration.step,category:liveFrustration.category??"clarity",severity:liveFrustration.severity??3,observation:liveFrustration.observation??"Usability barrier",visibleEvidence:liveFrustration.visibleEvidence??"Live agent evidence",recommendation:liveFrustration.recommendation??"Remove this barrier",narratedObservation:liveFrustration.observation??"This is frustrating",recovered:false} : replayFrameIndex === null ? selectedSession?.finding?.frictionEvents[0] ?? null : null;
 
   const stopLiveVoicePlayback = useCallback((message?: string) => {
     liveVoiceQueueRef.current = [];
@@ -784,7 +802,8 @@ export default function Home() {
     });
     if (!candidate?.imageUrl) return;
     const now = Date.now();
-    if (now - lastScreenNarrationAt.current < 6_000) return;
+    const narrationCooldownMs = replayPlaying ? 2_500 : 6_000;
+    if (now - lastScreenNarrationAt.current < narrationCooldownMs) return;
     lastScreenNarrationAt.current = now;
     screenNarratedEventIds.current.add(candidate.id);
     const narrationId = `screen-narration:${candidate.id}`;
@@ -855,6 +874,7 @@ export default function Home() {
     liveViewport,
     objective,
     queueLiveVoiceItem,
+    replayPlaying,
     selectedPersona,
     selectedSession?.sessionId,
     snapshot.objective,
@@ -2857,9 +2877,9 @@ export default function Home() {
                           ? "No H viewport frames received"
                           : "Waiting for H viewport"}
                   </span>
-                  {selectedHotspots.length + replayAttentionHotspots.length > 0 ? (
+                  {selectedHotspots.length > 0 ? (
                     <span className="live-heatmap-status">
-                      <Activity size={11} /> {replayFrameIndex !== null ? "Replay attention" : liveMode ? "Live heatmap" : "Evidence heatmap"} · {selectedHotspots.length + replayAttentionHotspots.length} signal{selectedHotspots.length + replayAttentionHotspots.length === 1 ? "" : "s"}
+                      <Activity size={11} /> {replayFrameIndex !== null ? "Frame attention" : liveMode ? "Live heatmap" : "Evidence heatmap"} · {selectedHotspots.length} signal{selectedHotspots.length === 1 ? "" : "s"}
                     </span>
                   ) : null}
                   {liveViewport?.imageUrl ? (
@@ -2882,15 +2902,13 @@ export default function Home() {
                       </div>
                     </>
                   ) : null}
-                  {liveViewportPresentation.showHotspotOverlay || replayAttentionHotspots.length > 0 ? (
+                  {liveViewportPresentation.showHotspotOverlay ? (
                     <div className="agent-viewport-coordinate-space is-heatmap">
-                      {liveViewportPresentation.showHotspotOverlay ? (
-                        <HotspotLayer
-                          hotspots={selectedHotspots}
-                          onSelect={handleHotspotSelect}
-                        />
-                      ) : null}
-                      <HeatmapDensityLayer hotspots={replayAttentionHotspots} />
+                      <HotspotLayer
+                        hotspots={selectedHotspots}
+                        onSelect={handleHotspotSelect}
+                      />
+                      <HeatmapDensityLayer hotspots={replayFrameIndex !== null ? selectedHotspots : []} />
                     </div>
                   ) : null}
                   {agentCursorPoint ? (

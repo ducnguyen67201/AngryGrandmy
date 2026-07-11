@@ -4,14 +4,16 @@ import type { AgentRuntimeEvent } from "@/lib/runtime/agent-events";
 export function buildReplayAttentionHotspots(
   events: readonly AgentRuntimeEvent[],
   personaId: string | undefined,
-  frameCursor: number,
+  previousCursor: number | null,
+  currentCursor: number,
 ): VisualHotspot[] {
   if (!personaId) return [];
 
   return events.flatMap((event) => {
     if (
       event.personaId !== personaId ||
-      event.cursor > frameCursor ||
+      event.cursor > currentCursor ||
+      (previousCursor !== null && event.cursor <= previousCursor) ||
       !validPercent(event.x) ||
       !validPercent(event.y) ||
       (event.type !== "narration" && event.type !== "frustration")
