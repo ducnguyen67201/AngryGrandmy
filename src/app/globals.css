@@ -198,8 +198,41 @@ a:focus-visible {
 .mock-muted-button { color: #7e8ba2; background: #c7d0df; }
 .mock-warning, .mock-success { margin-bottom: 7px; display: flex; align-items: center; gap: 4px; color: #d65652; font-weight: 800; }
 .mock-success { color: #2e967d; }
-.mock-cursor { position: absolute; right: 10px; bottom: 5px; color: white; filter: drop-shadow(0 2px 2px rgba(0,0,0,.7)); }
-.click-ripple { position: absolute; width: 18px; height: 18px; right: 4px; bottom: 4px; border: 2px solid #ff5b96; border-radius: 50%; background: rgba(255, 80, 150, .16); }
+.computer-use-status {
+  position: absolute; z-index: 3; top: 3px; right: 4px; max-width: 64%; padding: 2px 4px;
+  display: flex; align-items: center; gap: 3px; overflow: hidden; white-space: nowrap;
+  color: #e7eeff; border: 1px solid rgba(79, 112, 183, .2); border-radius: 8px;
+  background: rgba(20, 31, 59, .88); box-shadow: 0 3px 10px rgba(13, 20, 40, .15);
+  font-size: 5.5px; line-height: 1; font-weight: 800; letter-spacing: .01em;
+}
+.computer-use-status > span {
+  width: 4px; height: 4px; flex: 0 0 auto; border-radius: 50%;
+  background: #55d8c1; box-shadow: 0 0 5px #55d8c1; animation: agent-status-pulse 1.2s ease-in-out infinite;
+}
+.computer-use-status i { color: #76d5ff; font-style: normal; letter-spacing: 1px; animation: typing-dots 1s steps(3) infinite; }
+.computer-use-pause > span { background: #ffbb66; box-shadow: 0 0 5px #ffbb66; }
+.computer-use-review > span { background: #7b9fff; box-shadow: 0 0 5px #7b9fff; }
+.in-window-agent {
+  position: absolute; z-index: 6; width: 16px; height: 16px; pointer-events: none;
+  color: #fff; filter: drop-shadow(0 1px 2px rgba(5, 10, 30, .85));
+  transform: translate(-2px, -2px);
+}
+.in-window-agent > svg { position: relative; z-index: 2; display: block; fill: rgba(255,255,255,.2); }
+.in-window-click {
+  position: absolute; z-index: 1; width: 11px; height: 11px; left: -3px; top: -3px;
+  border: 1.5px solid #62b5ff; border-radius: 50%; opacity: 0;
+  background: rgba(86, 164, 255, .16); animation: in-window-click 5.2s ease-out infinite;
+}
+.in-window-agent-click .in-window-click { border-color: #8c70ff; background: rgba(127, 91, 255, .2); }
+.in-window-agent-type .in-window-click { border-color: #55d8c1; background: rgba(85, 216, 193, .18); }
+.in-window-agent-pause .in-window-click { border-color: #ffbb66; animation-duration: 6.4s; }
+.in-window-agent-review .in-window-click { border-color: #55d8c1; }
+.agent-scan-line {
+  position: absolute; z-index: 2; left: 4px; right: 4px; top: 24%; height: 9px;
+  border-top: 1px solid rgba(70, 139, 255, .55);
+  background: linear-gradient(to bottom, rgba(78, 145, 255, .12), transparent);
+  animation: agent-scan 2.7s ease-in-out infinite;
+}
 
 .persona-observation {
   position: absolute; z-index: 7; width: 32%; left: 3%; top: 48%; padding: 9px;
@@ -268,6 +301,19 @@ a:focus-visible {
 @keyframes live-pulse { 50% { opacity: .45; transform: scale(.8); } }
 @keyframes route-flow { to { stroke-dashoffset: -13; } }
 @keyframes node-pulse { 50% { transform: scale(1.35); opacity: .45; } }
+@keyframes agent-status-pulse { 50% { opacity: .35; transform: scale(.72); } }
+@keyframes typing-dots { 0% { clip-path: inset(0 100% 0 0); } 100% { clip-path: inset(0); } }
+@keyframes in-window-click {
+  0%, 40%, 100% { opacity: 0; transform: scale(.45); }
+  48% { opacity: .85; transform: scale(.65); }
+  64% { opacity: 0; transform: scale(2.1); }
+}
+@keyframes agent-scan {
+  0%, 100% { top: 24%; opacity: 0; }
+  18% { opacity: .8; }
+  72% { opacity: .55; }
+  85% { top: 82%; opacity: 0; }
+}
 
 @media (max-width: 1180px) {
   .hero-layout { grid-template-columns: 1fr; width: min(920px, calc(100% - 48px)); padding-top: 40px; }

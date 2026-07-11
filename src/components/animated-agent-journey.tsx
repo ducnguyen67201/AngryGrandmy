@@ -123,13 +123,27 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         ))}
       </svg>
 
-      <BrowserCard className="journey-card-search" title="Search">
+      <BrowserCard
+        activity="Scanning results"
+        className="journey-card-search"
+        cursorPath={{ x: [18, 72, 46, 80, 18], y: [52, 52, 72, 82, 52] }}
+        delay={0}
+        mode="scan"
+        title="Search"
+      >
         <div className="mock-search-brand">Search</div>
         <div className="mock-search-input">routine doctor visit</div>
         <div className="mock-lines"><i /><i /><i /></div>
       </BrowserCard>
 
-      <BrowserCard className="journey-card-options" title="Visit options">
+      <BrowserCard
+        activity="Comparing options"
+        className="journey-card-options"
+        cursorPath={{ x: [18, 48, 76, 48, 18], y: [62, 62, 62, 84, 62] }}
+        delay={0.8}
+        mode="click"
+        title="Visit options"
+      >
         <p className="mock-label">Choose your care</p>
         <div className="mock-option-row">
           <i /><i className="selected" /><i />
@@ -137,26 +151,40 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         <div className="mock-button">Compare visits</div>
       </BrowserCard>
 
-      <BrowserCard className="journey-card-form" title="Appointment details">
+      <BrowserCard
+        activity="Entering details"
+        className="journey-card-form"
+        cursorPath={{ x: [76, 45, 30, 72, 76], y: [78, 50, 50, 79, 78] }}
+        delay={1.6}
+        mode="type"
+        title="Appointment details"
+      >
         <p className="mock-label">Care modality</p>
         <div className="mock-input">Routine care</div>
         <div className="mock-button">Continue</div>
-        <motion.div
-          aria-hidden="true"
-          className="click-ripple"
-          animate={reduceMotion ? undefined : { scale: [0.5, 1.7], opacity: [0.9, 0] }}
-          transition={{ duration: 1.8, repeat: Infinity, repeatDelay: 1.1 }}
-        />
-        <MousePointer2 className="mock-cursor" size={22} />
       </BrowserCard>
 
-      <BrowserCard className="journey-card-blocked" title="Insurance">
+      <BrowserCard
+        activity="Waiting for context"
+        className="journey-card-blocked"
+        cursorPath={{ x: [72, 34, 34, 64, 72], y: [72, 48, 48, 72, 72] }}
+        delay={2.4}
+        mode="pause"
+        title="Insurance"
+      >
         <div className="mock-warning"><AlertTriangle size={13} /> Why do we need this?</div>
         <div className="mock-input">Insurance provider</div>
         <div className="mock-muted-button">Required to continue</div>
       </BrowserCard>
 
-      <BrowserCard className="journey-card-success" title="Review visit">
+      <BrowserCard
+        activity="Reviewing summary"
+        className="journey-card-success"
+        cursorPath={{ x: [78, 24, 62, 74, 78], y: [74, 48, 58, 80, 74] }}
+        delay={3.2}
+        mode="review"
+        title="Review visit"
+      >
         <div className="mock-success"><Check size={13} /> Safe stop reached</div>
         <div className="mock-lines"><i /><i /><i /></div>
         <div className="mock-button">Review details</div>
@@ -230,12 +258,20 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
 }
 
 function BrowserCard({
+  activity,
   children,
   className,
+  cursorPath,
+  delay,
+  mode,
   title,
 }: {
+  activity: string;
   children: React.ReactNode;
   className: string;
+  cursorPath: { x: number[]; y: number[] };
+  delay: number;
+  mode: "scan" | "click" | "type" | "pause" | "review";
   title: string;
 }) {
   const reduceMotion = useReducedMotion();
@@ -250,8 +286,66 @@ function BrowserCard({
         <span /><span /><span />
         <b>{title}</b>
       </div>
-      <div className="browser-content">{children}</div>
+      <div className="browser-content">
+        {children}
+        <ComputerUseActor
+          activity={activity}
+          cursorPath={cursorPath}
+          delay={delay}
+          mode={mode}
+        />
+      </div>
     </motion.article>
+  );
+}
+
+function ComputerUseActor({
+  activity,
+  cursorPath,
+  delay,
+  mode,
+}: {
+  activity: string;
+  cursorPath: { x: number[]; y: number[] };
+  delay: number;
+  mode: "scan" | "click" | "type" | "pause" | "review";
+}) {
+  const reduceMotion = useReducedMotion();
+  const startX = `${cursorPath.x[0]}%`;
+  const startY = `${cursorPath.y[0]}%`;
+
+  return (
+    <>
+      <div className={`computer-use-status computer-use-${mode}`}>
+        <span />
+        {activity}
+        {mode === "type" && <i aria-hidden="true">•••</i>}
+      </div>
+      {mode === "scan" && <div aria-hidden="true" className="agent-scan-line" />}
+      <motion.div
+        aria-label={`Computer-use agent: ${activity}`}
+        className={`in-window-agent in-window-agent-${mode}`}
+        style={{ left: startX, top: startY }}
+        animate={
+          reduceMotion
+            ? undefined
+            : {
+                left: cursorPath.x.map((value) => `${value}%`),
+                top: cursorPath.y.map((value) => `${value}%`),
+              }
+        }
+        transition={{
+          delay,
+          duration: mode === "pause" ? 6.4 : 5.2,
+          ease: "easeInOut",
+          repeat: Infinity,
+          times: [0, 0.3, 0.52, 0.78, 1],
+        }}
+      >
+        <span aria-hidden="true" className="in-window-click" />
+        <MousePointer2 aria-hidden="true" size={14} strokeWidth={2.4} />
+      </motion.div>
+    </>
   );
 }
 
