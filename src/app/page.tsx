@@ -35,6 +35,7 @@ import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 import { getRunGuidance } from "@/lib/ui/run-guidance";
+import { buildPanelReviewItems } from "@/lib/ui/panel-review";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -186,15 +187,25 @@ export default function Home() {
     liveMode,
   });
   const runGuidance = getRunGuidance({ snapshot, loading, dispatching });
+  const panelReviewItems = useMemo(
+    () =>
+      buildPanelReviewItems({
+        analysis: snapshot.analysis,
+        testerCount,
+        selectedPersonaId: snapshot.selectedPersonaId,
+      }),
+    [snapshot.analysis, snapshot.selectedPersonaId, testerCount],
+  );
   const sessionsByPersona = new Map(
     snapshot.sessions.map((session) => [session.personaId, session])
   );
+  const selectedPersona =
+    snapshot.analysis?.personas.find((persona) => persona.id === snapshot.selectedPersonaId) ??
+    snapshot.analysis?.personas[0];
   const selectedSession =
+    snapshot.sessions.find((session) => session.personaId === selectedPersona?.id) ??
     snapshot.sessions.find((session) => session.personaId === snapshot.selectedPersonaId) ??
     snapshot.sessions[0];
-  const selectedPersona = snapshot.analysis?.personas.find(
-    (persona) => persona.id === selectedSession?.personaId,
-  );
   const selectedNarration =
     selectedSession?.finding?.frictionEvents[0]?.narratedObservation ??
     selectedSession?.finding?.summary ??
@@ -979,6 +990,68 @@ export default function Home() {
                 </div>
               ) : null}
             </section>
+            {panelReviewItems.length > 0 ? (
+              <section className="rounded-lg border border-ink/12 bg-white/80 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-ink/45">
+                      Generated panel
+                    </p>
+                    <h3 className="mt-1 text-xl font-black">Review personas before dispatch</h3>
+                  </div>
+                  <span className="rounded-full bg-ink/6 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-ink/55">
+                    {testerCount} launching
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {panelReviewItems.map((item) => (
+                    <button
+                      className={`rounded-md border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
+                        item.selected
+                          ? "border-mint bg-mint/10 ring-2 ring-mint/45"
+                          : "border-ink/10 bg-white"
+                      }`}
+                      key={item.id}
+                      onClick={() => {
+                        setSnapshot((current) => ({
+                          ...current,
+                          selectedPersonaId: item.id,
+                        }));
+                        setDrawerOpen(true);
+                      }}
+                      type="button"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black">{item.displayName}</p>
+                          <p className="mt-1 text-sm font-semibold text-brass">{item.tagline}</p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+                            item.launchState === "launching"
+                              ? "bg-mint text-ink"
+                              : "bg-ink/8 text-ink/55"
+                          }`}
+                        >
+                          {item.launchState}
+                        </span>
+                      </div>
+                      <p className="mt-3 line-clamp-2 text-sm leading-6 text-ink/68">
+                        {item.context}
+                      </p>
+                      <div className="mt-3 rounded border border-ink/8 bg-paper/70 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-ink/40">
+                          Task
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-ink/72">
+                          {item.task}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
             <button
               className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-md border px-5 font-bold transition disabled:cursor-not-allowed disabled:opacity-55 ${
                 panelFeedback.tone === "ready"
@@ -1227,7 +1300,7 @@ export default function Home() {
             Focused persona voice
           </p>
           <h3 className="mt-2 text-2xl font-black">
-            {selectedSession?.personaId ?? "persona"} says:
+            {selectedPersona?.displayName ?? selectedSession?.personaId ?? "persona"} says:
           </h3>
           <p className="mt-4 text-lg leading-8 text-ink/75">
             {selectedNarration}
