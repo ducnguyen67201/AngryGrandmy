@@ -87,6 +87,7 @@ import {
   narrationEventIdForFrame,
   nextReplayFrameIndex,
 } from "@/lib/replay/synchronized-replay";
+import { selectImprovementCandidate } from "@/lib/fixes/improvement-handoff";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -215,6 +216,7 @@ export default function Home() {
   const [persistenceHydrated, setPersistenceHydrated] = useState(false);
   const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
   const [fixRequestIds, setFixRequestIds] = useState<Set<string>>(() => new Set());
+  const [improvementLoading, setImprovementLoading] = useState(false);
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
   const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
@@ -1974,6 +1976,59 @@ export default function Home() {
     else setStatusLine("Could not start the fix proposal job.");
   }
 
+  async function handleImproveFromFindings() {
+    const candidate = selectImprovementCandidate(snapshot.sessions);
+    if (!candidate) {
+      setStatusLine("No actionable friction finding is available yet.");
+      return;
+    }
+
+    const persona = snapshot.analysis?.personas.find(
+      (item) => item.id === candidate.personaId,
+    );
+    if (!persona) {
+      setStatusLine("The finding's tester context is unavailable.");
+      return;
+    }
+
+    const requestId = `${candidate.sessionId}:final:${candidate.friction.step}`;
+    setImprovementLoading(true);
+    setStatusLine(`Preparing an improvement from ${persona.displayName}'s strongest finding.`);
+
+    try {
+      const response = await fetch("/api/report?fixJob=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runId: snapshot.id,
+          sessionId: candidate.sessionId,
+          personaId: persona.id,
+          personaName: persona.displayName,
+          productUrl: snapshot.url,
+          objective: snapshot.objective ?? objective,
+          frustrationEventId: requestId,
+          frustration: candidate.friction,
+        }),
+      });
+      if (!response.ok) throw new Error("Improvement proposal was not accepted.");
+
+      setFixRequestIds((current) => new Set(current).add(requestId));
+      setSnapshot((current) => ({
+        ...current,
+        selectedPersonaId: candidate.personaId,
+      }));
+      setStatusLine("Improvement proposal queued from the highest-impact finding.");
+    } catch (error) {
+      setStatusLine(
+        error instanceof Error
+          ? error.message
+          : "Could not prepare the improvement proposal.",
+      );
+    } finally {
+      setImprovementLoading(false);
+    }
+  }
+
   async function handleQueueCalibratedRegression() {
     if (!activeCalibration || !runComplete) return;
     setRegressionLine("Queueing a proposal-only NemoClaw regression job...");
@@ -3262,6 +3317,15 @@ export default function Home() {
             <div><small>Frustration hotspots</small><b>{visualHotspots.length}</b></div>
             <div className="result-recommendation"><small>Highest-impact fix</small><b>{report.topRecommendations[0]}</b></div>
             <div className="export-actions">
+              <button
+                className="improve-findings-button"
+                disabled={improvementLoading}
+                onClick={handleImproveFromFindings}
+                type="button"
+              >
+                <Sparkles size={15} />
+                {improvementLoading ? "Preparing…" : "Improve from findings"}
+              </button>
               <button onClick={handleCopySummary} type="button"><Clipboard size={15} /> Copy</button>
               <button onClick={() => handleDownloadReport("markdown")} type="button"><Download size={15} /> Report</button>
             </div>
