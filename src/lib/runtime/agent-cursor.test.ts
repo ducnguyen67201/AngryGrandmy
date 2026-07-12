@@ -4,6 +4,7 @@ import {
   buildAnimatedCursorFallback,
   buildDemoCursorFallback,
   getAgentCursorForFrame,
+  getPostRunAttentionFallback,
 } from "./agent-cursor";
 
 function event(
@@ -103,5 +104,43 @@ describe("agent cursor replay", () => {
       expect(point.y).toBeGreaterThanOrEqual(10);
       expect(point.y).toBeLessThanOrEqual(88);
     }
+  });
+
+  it("uses the H-reported cursor before an estimated post-run narration fallback", () => {
+    expect(getPostRunAttentionFallback({
+      events: [
+        event("reported", 3, 68, 41),
+        event("future", 8, 22, 80),
+      ],
+      personaId: "casey",
+      frameCursor: 4,
+      frameIndex: 2,
+      frameCount: 16,
+    })).toEqual({
+      x: 68,
+      y: 41,
+      coordinateSource: "agent",
+    });
+  });
+
+  it("uses a moving estimate rather than screen center when no H cursor exists", () => {
+    const first = getPostRunAttentionFallback({
+      events: [],
+      personaId: "casey",
+      frameCursor: 1,
+      frameIndex: 1,
+      frameCount: 16,
+    });
+    const later = getPostRunAttentionFallback({
+      events: [],
+      personaId: "casey",
+      frameCursor: 4,
+      frameIndex: 4,
+      frameCount: 16,
+    });
+
+    expect(first).not.toEqual(later);
+    expect(first).not.toEqual({ x: 50, y: 50 });
+    expect(later).not.toEqual({ x: 50, y: 50 });
   });
 });
