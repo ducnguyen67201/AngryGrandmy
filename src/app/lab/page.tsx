@@ -95,6 +95,8 @@ import {
   selectImprovementCandidate,
   type ImprovementCandidate,
 } from "@/lib/fixes/improvement-handoff";
+import type { PreparedRepositoryChange } from "@/lib/fixes/prepare-repository-change";
+import type { PublicRepositoryMetadata } from "@/lib/repository/local-repository";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -229,6 +231,11 @@ export default function Home() {
   const [improvementProposal, setImprovementProposal] =
     useState<ImprovementProposal | null>(null);
   const [improvementError, setImprovementError] = useState<string | null>(null);
+  const [connectedRepository, setConnectedRepository] =
+    useState<PublicRepositoryMetadata | null>(null);
+  const [preparingCodeChange, setPreparingCodeChange] = useState(false);
+  const [preparedCodeChange, setPreparedCodeChange] =
+    useState<PreparedRepositoryChange | null>(null);
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
   const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
@@ -1998,6 +2005,8 @@ export default function Home() {
     setImprovementCandidate(candidate);
     setImprovementProposal(null);
     setImprovementError(null);
+    setConnectedRepository(null);
+    setPreparedCodeChange(null);
 
     const persona = snapshot.analysis?.personas.find(
       (item) => item.id === candidate.personaId,
@@ -2034,6 +2043,18 @@ export default function Home() {
 
       setFixRequestIds((current) => new Set(current).add(requestId));
       setImprovementProposal(payload.data);
+      const repositoryResponse = await fetch("/api/repository");
+      const repositoryPayload = (await repositoryResponse.json()) as {
+        data?: PublicRepositoryMetadata;
+        error?: { message?: string };
+      };
+      if (repositoryResponse.ok && repositoryPayload.data) {
+        setConnectedRepository(repositoryPayload.data);
+      } else {
+        setImprovementError(
+          repositoryPayload.error?.message ?? "No local repository is connected.",
+        );
+      }
       setSnapshot((current) => ({
         ...current,
         selectedPersonaId: candidate.personaId,
@@ -2047,6 +2068,50 @@ export default function Home() {
       setStatusLine(message);
     } finally {
       setImprovementLoading(false);
+    }
+  }
+
+  async function handlePrepareCodeChange() {
+    if (!connectedRepository || !improvementCandidate || !improvementProposal) return;
+    setPreparingCodeChange(true);
+    setPreparedCodeChange(null);
+    setImprovementError(null);
+    setStatusLine(`Preparing a validated change in ${connectedRepository.name}.`);
+
+    try {
+      const response = await fetch("/api/improvements/prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repositoryId: connectedRepository.id,
+          recommendation: improvementCandidate.friction.recommendation,
+          evidence: improvementCandidate.friction.visibleEvidence,
+          proposal: improvementProposal.proposals
+            .map((item) => `${item.role}: ${item.details}`)
+            .join("\n\n"),
+        }),
+      });
+      const payload = (await response.json()) as {
+        data?: PreparedRepositoryChange;
+        error?: { message?: string };
+      };
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error?.message ?? "Could not prepare the code change.");
+      }
+      setPreparedCodeChange(payload.data);
+      setStatusLine(
+        payload.data.readyForPr
+          ? "Local diff validated and ready for PR creation."
+          : "Local diff prepared, but validation still needs attention.",
+      );
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : "Could not prepare the code change.";
+      setImprovementError(message);
+      setStatusLine(message);
+    } finally {
+      setPreparingCodeChange(false);
     }
   }
 
@@ -3356,7 +3421,11 @@ export default function Home() {
               candidate={improvementCandidate}
               error={improvementError}
               loading={improvementLoading}
+              onPrepareChange={handlePrepareCodeChange}
+              preparedChange={preparedCodeChange}
+              preparingChange={preparingCodeChange}
               proposal={improvementProposal}
+              repository={connectedRepository}
             />
           ) : null}
           </details>
