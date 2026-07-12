@@ -3,6 +3,7 @@ import {
   createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
   getLiveVoicePlaybackMode,
+  getLiveVoicePlaybackSettings,
   getPostRunScreenNarrationFrames,
   getScreenNarrationCandidate,
   getReplayNarrationsForFrame,
@@ -20,6 +21,13 @@ const item = (id: string): LiveVoiceQueueItem => ({
 });
 
 describe("live persona voice queue", () => {
+  it("uses a moderately faster speed for provider and browser narration", () => {
+    expect(getLiveVoicePlaybackSettings()).toEqual({
+      providerPlaybackRate: 1.2,
+      browserSpeechRate: 1.15,
+    });
+  });
+
   it("keeps text-only provider responses as browser speech queue items", () => {
     const fallback = createLiveVoiceQueueItem({
       eventId: "finding-1",
