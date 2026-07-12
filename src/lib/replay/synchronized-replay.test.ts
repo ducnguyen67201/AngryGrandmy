@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildSynchronizedReplayTimeline,
+  chunkReplayFrames,
   nextReplayFrameIndex,
 } from "./synchronized-replay";
 import type { AgentRuntimeEvent } from "@/lib/runtime/agent-events";
@@ -105,5 +106,23 @@ describe("nextReplayFrameIndex", () => {
     expect(nextReplayFrameIndex(0, 3)).toBe(1);
     expect(nextReplayFrameIndex(1, 3)).toBe(2);
     expect(nextReplayFrameIndex(2, 3)).toBeNull();
+  });
+});
+
+describe("chunkReplayFrames", () => {
+  it("prepares large completed runs in bounded parallel batches", () => {
+    const frames = [
+      frame("frame-1", 1),
+      frame("frame-2", 2),
+      frame("frame-3", 3),
+      frame("frame-4", 4),
+      frame("frame-5", 5),
+    ];
+
+    expect(chunkReplayFrames(frames, 3).map((batch) => batch.map(({ id }) => id)))
+      .toEqual([
+        ["frame-1", "frame-2", "frame-3"],
+        ["frame-4", "frame-5"],
+      ]);
   });
 });
