@@ -28,6 +28,25 @@ describe("Gradium persona voice", () => {
     expect(body.voice_id).toBe("7c5UOKm7AiBgJADg");
   });
 
+  it("asks Gradium for moderately faster speech", async () => {
+    vi.stubEnv("GRADIUM_API_KEY", "test-key");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { "content-type": "audio/wav" },
+      }),
+    );
+
+    await createVoiceReaction({
+      personaId: "linda",
+      voiceSlot: 0,
+      text: "Let us move a little faster.",
+    });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.json_config).toMatchObject({ padding_bonus: -1.5 });
+  });
+
   it("returns a browser-readable text fallback when Gradium is not configured", async () => {
     vi.stubEnv("GRADIUM_API_KEY", "");
 
