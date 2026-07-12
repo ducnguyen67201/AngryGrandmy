@@ -1132,7 +1132,7 @@ a:focus-visible {
 }
 .training-episode-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 .training-episode-card {
@@ -1142,6 +1142,22 @@ a:focus-visible {
   border: 1px solid #dfe3e2;
   border-radius: 10px;
   background: white;
+}
+.training-episode-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, auto);
+  gap: 16px;
+  align-items: start;
+}
+.training-id-stack {
+  display: grid;
+  gap: 5px;
+  justify-items: end;
+  color: #7f8e8b;
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 .training-episode-card h3 {
   margin: 0 0 8px;
@@ -1186,6 +1202,102 @@ a:focus-visible {
   border-radius: 8px;
   background: #edfaf4;
   font-weight: 750;
+}
+.training-data-sections {
+  display: grid;
+  gap: 10px;
+}
+.training-data-section, .training-raw-json {
+  border: 1px solid #dfe3e2;
+  border-radius: 9px;
+  background: #fbfcfb;
+  overflow: hidden;
+}
+.training-data-section > summary, .training-raw-json > summary {
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  color: #34423e;
+  border-bottom: 1px solid #e8ecea;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.training-data-grid {
+  margin: 0;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.training-data-grid div {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: white;
+}
+.training-data-grid dt {
+  color: #7f8e8b;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.training-data-grid dd {
+  margin: 4px 0 0;
+  color: #34423e;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.trajectory-table {
+  margin: 12px;
+  overflow: hidden;
+  border: 1px solid #e4e9e7;
+  border-radius: 8px;
+  background: white;
+}
+.trajectory-table > div {
+  display: grid;
+  grid-template-columns: 58px 110px minmax(0, 1fr) 110px;
+  gap: 8px;
+  padding: 9px 10px;
+  border-top: 1px solid #eef1f0;
+  color: #4f5d59;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.trajectory-table > div:first-child {
+  border-top: 0;
+  color: #7f8e8b;
+  background: #f4f8f6;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.trajectory-table span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.training-muted {
+  padding: 12px;
+  color: #7f8e8b;
+}
+.training-data-section pre, .training-raw-json pre {
+  max-height: 360px;
+  margin: 12px;
+  padding: 12px;
+  overflow: auto;
+  color: #d6ece4;
+  border-radius: 8px;
+  background: #17201f;
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  line-height: 1.55;
 }
 .training-empty {
   padding: 48px 20px;
@@ -1325,7 +1437,12 @@ a:focus-visible {
   .insight-section { gap: 48px; }
   .training-nav, .training-hero, .training-list { width: calc(100% - 32px); }
   .training-summary-grid { grid-template-columns: 1fr; }
+  .training-episode-heading { grid-template-columns: 1fr; }
+  .training-id-stack { justify-items: start; text-align: left; }
   .training-episode-card dl { grid-template-columns: repeat(2, 1fr); }
+  .training-data-grid { grid-template-columns: 1fr; }
+  .trajectory-table { overflow-x: auto; }
+  .trajectory-table > div { min-width: 620px; }
   .training-collection-toast { grid-template-columns: 1fr; }
   .training-collection-toast a, .training-collection-toast button { width: 100%; justify-content: center; text-align: center; }
   .landing-footer { display: block; text-align: center; }
