@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   CheckCircle2,
+  Code2,
   ExternalLink,
   Play,
   ShieldCheck,
@@ -40,15 +41,16 @@ export default function Home() {
         <div className="hero-layout" id="top">
           <div className="hero-copy">
             <p className="eyebrow">
-              <Sparkles size={14} /> Synthetic usability lab
+              <Sparkles size={14} /> Computer-use UX data engine
             </p>
             <h1>
-              Watch real-world personas
-              <span className="hero-title-line">test every path.</span>
+              Turn agent traces into{" "}
+              <span className="hero-title-line">good UI signal.</span>
             </h1>
             <p className="hero-description">
-              Four computer-use agents explore your product as different people. See where they
-              hesitate, backtrack, and succeed—before your customers have to.
+              GrannySmith sends computer-use agents through your product and records what they
+              see, try, click, misunderstand, and recover from. Every run becomes a model-ready
+              usability episode for fixing today&apos;s UI and researching better UI generation.
             </p>
 
             <form action="/lab" className="hero-form" id="start" method="get">
@@ -75,7 +77,7 @@ export default function Home() {
               </div>
               <div>
                 <div className="proof-stars" aria-label="Five stars">★★★★★</div>
-                <p>Four perspectives. One evidence-backed report.</p>
+                <p>Screen state, action, outcome, UX label.</p>
               </div>
             </div>
           </div>
@@ -86,11 +88,11 @@ export default function Home() {
 
       <section className="results-section" id="evidence">
         <div className="section-heading">
-          <p className="eyebrow">Evidence, not guesswork</p>
-          <h2>Every reaction becomes a concrete product decision.</h2>
+          <p className="eyebrow">Evidence, not vibes</p>
+          <h2>What the computer sees becomes a label for UI quality.</h2>
           <p>
-            GrannySmith combines trajectory evidence across personas into a deterministic score
-            and prioritized fixes.
+            The dataset is not just screenshots. It links screen state, agent action,
+            observed outcome, friction category, severity, and a concrete fix.
           </p>
         </div>
 
@@ -98,25 +100,59 @@ export default function Home() {
           <article className="result-card result-score">
             <ShieldCheck />
             <p className="result-number">{report?.score ?? 0}<span>/100</span></p>
-            <h3>Human-Friendly Score</h3>
-            <p>Calculated from completion, clarity, efficiency, recovery, and trust.</p>
+            <h3>Good or bad UI signal</h3>
+            <p>Completion, clarity, recovery, trust, and safe-stop behavior become labels.</p>
           </article>
           <article className="result-card">
             <Sparkles />
             <p className="result-number">{report?.sharedHotspots.length ?? 0}</p>
-            <h3>Shared friction hotspots</h3>
-            <p>Confusion clustered across multiple synthetic personas.</p>
+            <h3>Computer-use traces</h3>
+            <p>Screen observations, cursor points, narration, and frustration events are kept together.</p>
           </article>
           <article className="result-card">
             <ExternalLink />
             <p className="result-number">{snapshot.sessions.length}</p>
-            <h3>Evidence replays</h3>
-            <p>Step-level screenshots and actions for every completed trajectory.</p>
+            <h3>Fix-ready episodes</h3>
+            <p>Each failed interaction points to copy, layout, flow, or feedback changes.</p>
           </article>
         </div>
       </section>
 
-      <section className="insight-section" id="how-it-works">
+      <section className="trace-section" id="how-it-works">
+        <div className="section-heading">
+          <p className="eyebrow">
+            <Code2 size={14} /> Computer-use format
+          </p>
+          <h2>One run becomes structured UI preference data.</h2>
+          <p>
+            GrannySmith preserves the causal chain: what was visible, what the agent tried,
+            what happened next, and why that interaction helped or hurt the task.
+          </p>
+        </div>
+        <div className="trace-flow">
+          {[
+            ["01", "Screen state", "URL, screenshot reference, visible element, cursor location."],
+            ["02", "Agent action", "Click, type, navigate, hesitate, backtrack, or stop safely."],
+            ["03", "Observed outcome", "New screen, no feedback, confusing request, or successful progress."],
+            ["04", "UX label", "Good UI or bad UI signal with category, severity, and recommended fix."],
+          ].map(([step, title, copy]) => (
+            <article key={step}>
+              <span>{step}</span>
+              <h3>{title}</h3>
+              <p>{copy}</p>
+            </article>
+          ))}
+        </div>
+        <pre className="trace-sample">{`{
+  "screen": "what the computer sees",
+  "action": "what the agent tried",
+  "outcome": "what happened next",
+  "label": "good_ui | bad_ui",
+  "fix": "what would reduce friction"
+}`}</pre>
+      </section>
+
+      <section className="insight-section">
         <div className="insight-quote">
           <p className="eyebrow">Focused persona voice</p>
           <blockquote>

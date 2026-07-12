@@ -1031,6 +1031,65 @@ a:focus-visible {
 .result-number span { color: #8590a5; font-size: 18px; }
 .result-card h3 { margin: 0 0 10px; font-size: 16px; }
 .result-card > p:last-child { margin: 0; color: #738096; font-size: 14px; line-height: 1.6; }
+.trace-section {
+  padding: 96px max(32px, calc((100% - 1180px) / 2));
+  color: #111a2e;
+  background: #ffffff;
+}
+.trace-section .section-heading {
+  margin-bottom: 34px;
+}
+.trace-section .section-heading .eyebrow {
+  color: #236d58;
+}
+.trace-flow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.trace-flow article {
+  min-height: 190px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid #dfe6e4;
+  border-radius: 12px;
+  background: #f5f8f7;
+}
+.trace-flow span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: #236d58;
+  border-radius: 9px;
+  background: #dff5eb;
+  font-size: 11px;
+  font-weight: 900;
+}
+.trace-flow h3 {
+  margin: auto 0 8px;
+  font-size: 18px;
+}
+.trace-flow p {
+  margin: 0;
+  color: #66736f;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.trace-sample {
+  margin: 14px 0 0;
+  padding: 18px;
+  overflow: auto;
+  color: #d6ece4;
+  border-radius: 12px;
+  background: #17201f;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
 .insight-section { padding: 90px max(32px, calc((100% - 1180px) / 2)); display: grid; grid-template-columns: .9fr 1.1fr; gap: 80px; background: #0a1125; }
 .insight-quote blockquote { margin: 0 0 20px; color: #edf2ff; font-family: Georgia, serif; font-size: clamp(27px, 3vw, 40px); line-height: 1.3; letter-spacing: -.03em; }
 .insight-quote > p:last-child { color: #7987a4; font-size: 13px; }
@@ -1374,6 +1433,7 @@ a:focus-visible {
   .hero-copy h1, .hero-description, .hero-form { margin-left: auto; margin-right: auto; }
   .hero-copy .eyebrow, .hero-proof { justify-content: center; }
   .journey-stage { width: 100%; }
+  .trace-flow { grid-template-columns: repeat(2, 1fr); }
   .training-summary-grid { grid-template-columns: repeat(2, 1fr); }
   .training-episode-grid { grid-template-columns: 1fr; }
 }
@@ -1432,7 +1492,9 @@ a:focus-visible {
   .signal-bridge-metrics span { font-size: 6px; }
   .signal-bridge-metrics b { font-size: 12px; }
   .results-section, .insight-section { padding-left: 20px; padding-right: 20px; }
+  .trace-section { padding: 70px 20px; }
   .result-cards, .insight-section { grid-template-columns: 1fr; }
+  .trace-flow { grid-template-columns: 1fr; }
   .result-cards::before { display: none; }
   .insight-section { gap: 48px; }
   .training-nav, .training-hero, .training-list { width: calc(100% - 32px); }
