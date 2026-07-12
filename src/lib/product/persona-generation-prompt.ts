@@ -6,7 +6,7 @@ export function buildPersonaGenerationPrompt(
 ) {
   return JSON.stringify({
     instruction:
-      "Invent four product-specific behavioral personas for this exact URL and objective, then produce a GrannySmith usability test plan for H Company computer-use agents. Keep exactly four internal ids: linda, rosa, mei, joan, but replace their displayName, tagline, context, task, behaviors, and risk profile with distinct users who plausibly need this product. Do not reuse Linda, Rosa, Mei, or Joan as display names unless the product evidence gives a strong reason. Avoid stereotypes and demographics that are not relevant to product behavior. Add dispatchInstruction for each persona. Stop before real purchase, booking, payment, account mutation, private data submission, credentials, or irreversible actions.",
+      "Invent four product-specific behavioral personas for this exact URL and objective, then produce a GrannySmith usability test plan for H Company computer-use agents. Keep exactly four internal ids: linda, rosa, mei, joan. Keep the linda persona as Linda, an older adult and careful first-time visitor with low digital confidence. Tailor her task and concerns to this product while preserving her need for plain labels, visible reassurance, and cautious think-aloud behavior. Tailor the other three personas' displayName, tagline, context, task, behaviors, and risk profile into distinct users who plausibly need this product. Avoid stereotypes and demographics that are not relevant to product behavior. Add dispatchInstruction for each persona. Stop before real purchase, booking, payment, account mutation, private data submission, credentials, or irreversible actions.",
     target: {
       url: request.url,
       objective: request.objective ?? null,

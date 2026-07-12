@@ -5,6 +5,7 @@ import type {
 } from "@/lib/schemas/run";
 import { ProductAnalysisSchema } from "@/lib/schemas/run";
 import { buildPersonaGenerationPrompt } from "./persona-generation-prompt";
+import { anchorLindaPersona } from "./persona-anchor";
 
 type ProductDomain = {
   category: string;
@@ -583,14 +584,23 @@ function normalizeModelAnalysis(
 
   return ProductAnalysisSchema.parse({
     ...candidate,
-    personas: candidate.personas.map((persona, index) => ({
-      ...persona,
-      id: heuristic.personas[index].id,
-      voiceSlot: heuristic.personas[index].voiceSlot,
-      visualVariant: heuristic.personas[index].visualVariant,
-      dispatchInstruction:
-        persona.dispatchInstruction ??
-        buildDispatchInstruction(
+    personas: candidate.personas.map((modelPersona, index) => {
+      const heuristicPersona = heuristic.personas[index];
+      const persona =
+        index === 0
+          ? anchorLindaPersona(modelPersona, heuristicPersona)
+          : modelPersona;
+
+      const normalizedPersona = {
+        ...persona,
+        id: heuristicPersona.id,
+        voiceSlot: heuristicPersona.voiceSlot,
+        visualVariant: heuristicPersona.visualVariant,
+      };
+
+      return {
+        ...normalizedPersona,
+        dispatchInstruction: buildDispatchInstruction(
           candidate.productName,
           {
             category: candidate.productCategory,
@@ -599,15 +609,17 @@ function normalizeModelAnalysis(
             safeStopPoint:
               candidate.primaryFlows[0]?.safeStopPoint ??
               heuristic.primaryFlows[0].safeStopPoint,
-            trustRisk: persona.trustBoundaries.join("; "),
+            trustRisk: normalizedPersona.trustBoundaries.join("; "),
             jargonRisk: "product-specific wording",
-            irreversibleAction: persona.stopConditions[0] ?? "an irreversible action",
+            irreversibleAction:
+              normalizedPersona.stopConditions[0] ?? "an irreversible action",
             likelyDataRequest: "personal information",
-            expectedStepBudget: persona.expectedStepBudget,
+            expectedStepBudget: normalizedPersona.expectedStepBudget,
           },
-          persona,
+          normalizedPersona,
         ),
-    })) as ProductAnalysis["personas"],
+      };
+    }) as ProductAnalysis["personas"],
   });
 }
 

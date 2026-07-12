@@ -18,10 +18,13 @@ As a demo viewer, I want persona generation to feel like GrannySmith travels fro
 | Full-motion users see the complete 4.2-second reveal | PASS |
 | Reduced-motion users are not delayed | PASS |
 | The `GS` header badge is replaced by Linda's 2D mascot portrait | PASS (build and visual QA) |
+| Linda remains the older-adult anchor after model-based persona generation | PASS |
 
 ## Visual QA
 
 Verified locally at `http://localhost:3003/lab`: the room reveal renders without clipping, the caption card remains readable, and the transition lands on the persona roster.
+
+The roster keeps Linda while adapting her task and concerns to the tested product, so the character introduced in the transition is the same character dispatched into the replay.
 
 ## Assets
 
