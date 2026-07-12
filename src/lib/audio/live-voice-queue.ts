@@ -62,22 +62,6 @@ export function shouldEnableLiveVoiceForDispatch(enabled: boolean): boolean {
   return !enabled;
 }
 
-export function buildReplayFrameNarration({
-  personaName,
-  frameNumber,
-  evidence,
-  fallback,
-}: {
-  personaName: string;
-  frameNumber: number;
-  evidence?: string | null;
-  fallback?: string | null;
-}) {
-  const grounded = evidence?.trim() || fallback?.trim();
-  if (grounded) return grounded;
-  return `${personaName} is reviewing replay frame ${frameNumber}.`;
-}
-
 export function isLiveNarrationEligible({
   enabled,
   eventId,
@@ -141,6 +125,28 @@ export function getScreenNarrationCandidate({
       !processedEventIds.has(event.id),
   ) ?? null;
   return candidate;
+}
+
+export function getPostRunScreenNarrationFrames({
+  runComplete,
+  frames,
+  selectedPersonaId,
+  processedFrameIds,
+}: {
+  runComplete: boolean;
+  frames: readonly ScreenNarrationEvent[];
+  selectedPersonaId: string | null | undefined;
+  processedFrameIds: ReadonlySet<string>;
+}): ScreenNarrationEvent[] {
+  if (!runComplete || !selectedPersonaId) return [];
+
+  return frames.filter(
+    (frame) =>
+      frame.personaId === selectedPersonaId &&
+      frame.type === "viewport" &&
+      Boolean(frame.imageUrl) &&
+      !processedFrameIds.has(frame.id),
+  );
 }
 
 export function getReplayNarrationsForFrame({
