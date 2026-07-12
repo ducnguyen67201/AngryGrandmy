@@ -38,7 +38,7 @@ describe("createScreenNarration", () => {
     expect(JSON.stringify(body)).toContain("older adult");
     const prompt = JSON.stringify(body);
     expect(prompt).toContain("first person");
-    expect(prompt).toContain("think aloud");
+    expect(prompt).toContain("think-aloud");
     expect(prompt).toContain("Hmm, can I click this?");
     expect(prompt).toContain("Do not describe the persona in third person");
     expect(prompt).toContain("Do not invent");

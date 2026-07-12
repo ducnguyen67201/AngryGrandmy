@@ -21,15 +21,15 @@ type OpenAIResponse = {
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
 const OPENAI_SCREEN_NARRATION_MODEL =
   process.env.OPENAI_SCREEN_NARRATION_MODEL ?? "gpt-4.1-mini";
-function fallbackAction(personaName: string) {
-  return `${personaName} is reviewing the current page and looking for the next action.`;
+function fallbackAction() {
+  return "Hmm, I’m looking over this page. Where should I go next?";
 }
 
 export async function createScreenNarration(
   request: ScreenNarrationRequest,
 ): Promise<ScreenNarrationResult> {
   if (!process.env.OPENAI_API_KEY) {
-    return { source: "fallback", text: fallbackAction(request.personaName) };
+    return { source: "fallback", text: fallbackAction() };
   }
 
   try {
@@ -46,7 +46,7 @@ export async function createScreenNarration(
             role: "system",
             content: [{
               type: "input_text",
-              text: "You are narrating a live computer-use replay. Identify the single visible UI element or page region the persona is acting on, then describe the visible action in third person. Do not quote the persona profile, hidden thoughts, or prewritten findings. Return JSON with text (8-24 spoken words), x, and y. x/y are the element center as percentages of the full screenshot from 0 to 100. If no specific element is relevant, omit x/y.",
+              text: "Create spoken think-aloud commentary for a live computer-use replay. Speak as the persona in first person, as if they are using this screen right now. Ground the line in one visible UI element or page region and express a natural immediate reaction: recognition, curiosity, uncertainty, concern, or the next intention. Match the persona’s confidence and everyday vocabulary without turning age, disability, or inexperience into a caricature. Use brief conversational phrases and occasional interjections naturally, such as: ‘Hmm, can I click this? I’m not sure what it does.’ or ‘Oh, this looks like the button I need.’ Do not describe the persona in third person, say their name, mechanically narrate cursor movement, quote the persona profile, or reuse prewritten findings. Do not invent controls, outcomes, or facts that are not visible. Return JSON with text (8-22 spoken words), x, and y. x/y are the attended element’s center as percentages of the full screenshot from 0 to 100. If no specific element is relevant, omit x/y.",
             }],
           },
           {
@@ -65,10 +65,10 @@ export async function createScreenNarration(
       }),
       signal: AbortSignal.timeout(25_000),
     });
-    if (!response.ok) return { source: "fallback", text: fallbackAction(request.personaName) };
+    if (!response.ok) return { source: "fallback", text: fallbackAction() };
 
     const content = readOpenAIText((await response.json()) as OpenAIResponse)?.trim();
-    if (!content) return { source: "fallback", text: fallbackAction(request.personaName) };
+    if (!content) return { source: "fallback", text: fallbackAction() };
     const parsed = parseNarrationContent(content);
     if (!parsed) return { source: "openai", text: content.slice(0, 300) };
     return {
@@ -79,7 +79,7 @@ export async function createScreenNarration(
         : {}),
     };
   } catch {
-    return { source: "fallback", text: fallbackAction(request.personaName) };
+    return { source: "fallback", text: fallbackAction() };
   }
 }
 
