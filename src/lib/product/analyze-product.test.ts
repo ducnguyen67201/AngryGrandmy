@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildProductAnalysis } from "./analyze-product";
+import { anchorLindaPersona } from "./persona-anchor";
 import { buildPersonaGenerationPrompt } from "./persona-generation-prompt";
 
 const baseRequest = {
@@ -60,5 +61,29 @@ describe("buildProductAnalysis", () => {
     expect(prompt).toContain("Invent four product-specific behavioral personas");
     expect(prompt).toContain("Keep the linda persona as Linda, an older adult");
     expect(prompt).toContain("Tailor her task and concerns to this product");
+  });
+
+  it("restores Linda's identity when a model renames the anchor persona", () => {
+    const heuristic = buildProductAnalysis({
+      ...baseRequest,
+      url: "https://developer-tools.example",
+      objective: "Integrate the API safely",
+    });
+    const modelPersona = {
+      ...heuristic.personas[0],
+      displayName: "Alex",
+      context: "Alex is a developer evaluating an unfamiliar API.",
+      digitalConfidence: "high" as const,
+      task: "Compare the SDK options without connecting production data.",
+    };
+
+    const anchored = anchorLindaPersona(modelPersona, heuristic.personas[0]);
+
+    expect(anchored.displayName).toBe("Linda");
+    expect(anchored.context).toContain("older adult");
+    expect(anchored.context).toContain("unfamiliar API");
+    expect(anchored.digitalConfidence).toBe("low");
+    expect(anchored.task).toBe(modelPersona.task);
+    expect(anchored.introLine).toContain("Linda");
   });
 });
