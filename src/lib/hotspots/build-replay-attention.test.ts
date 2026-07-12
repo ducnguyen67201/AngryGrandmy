@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildReplayAttentionHotspots } from "./build-replay-attention";
+import {
+  buildReplayAttentionHotspots,
+  filterReplayHotspotsForFrame,
+} from "./build-replay-attention";
 import type { AgentRuntimeEvent } from "@/lib/runtime/agent-events";
 
 function event(overrides: Partial<AgentRuntimeEvent>): AgentRuntimeEvent {
@@ -99,5 +102,43 @@ describe("buildReplayAttentionHotspots", () => {
       event({ id: "missing", x: undefined, y: undefined }),
       event({ id: "invalid", x: 130, y: -4 }),
     ], "arjun", null, 10)).toEqual([]);
+  });
+});
+
+describe("filterReplayHotspotsForFrame", () => {
+  const hotspot = (id: string, step: number) => ({
+    id,
+    personaId: "arjun",
+    personaName: "Arjun",
+    category: "clarity" as const,
+    severity: 3 as const,
+    x: 40 + step,
+    y: 50,
+    label: "clarity",
+    evidence: `Step ${step}`,
+    recommendation: "Clarify this area.",
+    step,
+  });
+
+  it("shows final finding hotspots only for the active replay step window", () => {
+    const hotspots = [
+      hotspot("early", 2),
+      hotspot("current", 5),
+      hotspot("future", 9),
+    ];
+
+    expect(filterReplayHotspotsForFrame({
+      hotspots,
+      previousStep: 2,
+      currentStep: 5,
+    }).map(({ id }) => id)).toEqual(["current"]);
+  });
+
+  it("includes first-frame finding hotspots when replay starts", () => {
+    expect(filterReplayHotspotsForFrame({
+      hotspots: [hotspot("first", 1), hotspot("later", 4)],
+      previousStep: null,
+      currentStep: 1,
+    }).map(({ id }) => id)).toEqual(["first"]);
   });
 });
