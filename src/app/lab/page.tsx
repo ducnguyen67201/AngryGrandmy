@@ -82,6 +82,7 @@ import {
 } from "@/lib/runtime/agent-cursor";
 import {
   buildSynchronizedReplayTimeline,
+  chunkReplayFrames,
   narrationEventIdForFrame,
   nextReplayFrameIndex,
 } from "@/lib/replay/synchronized-replay";
@@ -374,6 +375,11 @@ export default function Home() {
     () => getPersonaViewportFrames(liveEvents, selectedPersona?.id),
     [liveEvents, selectedPersona?.id],
   );
+  const viewportFramesRef = useRef(viewportFrames);
+  viewportFramesRef.current = viewportFrames;
+  const viewportFrameKey = viewportFrames
+    .map((frame) => `${frame.id}:${frame.imageUrl ?? ""}`)
+    .join("|");
   const synchronizedReplay = useMemo(
     () =>
       buildSynchronizedReplayTimeline({
@@ -918,15 +924,22 @@ export default function Home() {
 
   useEffect(() => {
     if (!selectedPersona) return;
+    const selectedViewportFrames = viewportFramesRef.current;
+    const existingNarrationEventIds = new Set(
+      liveEventsRef.current
+        .filter((event) => event.type === "narration")
+        .map((event) => event.id),
+    );
 
     const framesToNarrate = getPostRunScreenNarrationFrames({
       runComplete,
-      frames: viewportFrames,
+      frames: selectedViewportFrames,
       selectedPersonaId: selectedPersona.id,
       processedFrameIds: new Set(
-        viewportFrames
+        selectedViewportFrames
           .filter((frame) =>
-            liveVoiceAudioCacheRef.current.has(narrationEventIdForFrame(frame.id)),
+            liveVoiceAudioCacheRef.current.has(narrationEventIdForFrame(frame.id)) &&
+            existingNarrationEventIds.has(narrationEventIdForFrame(frame.id)),
           )
           .map((frame) => frame.id),
       ),
@@ -943,109 +956,120 @@ export default function Home() {
 
     void (async () => {
       let completed = 0;
-      const generatedEvents: AgentRuntimeEvent[] = [];
-      for (const [index, frame] of framesToNarrate.entries()) {
-        if (cancelled || !frame.imageUrl) break;
-        const narrationId = narrationEventIdForFrame(frame.id);
-        let narrationEvent: AgentRuntimeEvent;
-
-        try {
-          const response = await fetch("/api/screen-narration", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              imageUrl: frame.imageUrl,
-              personaName: selectedPersona.displayName,
-              personaDescription: `${selectedPersona.tagline}. ${selectedPersona.context}. ${selectedPersona.behaviors.join(" ")}`,
-              objective: snapshot.objective ?? objective,
-              currentUrl: frame.currentUrl ?? snapshot.url,
-            }),
-          });
-          const payload = (await response.json()) as ScreenNarrationPayload;
-          if (!response.ok || !payload.data?.text) {
-            throw new Error(payload.error?.message ?? "Screen narration failed.");
-          }
-          if (cancelled) break;
-
-          const hasVisionPoint =
-            typeof payload.data.x === "number" && typeof payload.data.y === "number";
-          const fallbackPoint = getPostRunAttentionFallback({
-            events: liveEventsRef.current,
-            personaId: selectedPersona.id,
-            frameCursor: frame.cursor,
-            frameIndex: index,
-            frameCount: framesToNarrate.length,
-          });
-          narrationEvent = {
-            id: narrationId,
-            sessionId: frame.sessionId ?? selectedSession?.sessionId ?? frame.id,
-            personaId: selectedPersona.id,
-            cursor: frame.cursor,
-            step: frame.step ?? frame.cursor,
-            createdAt: new Date().toISOString(),
-            type: "narration",
-            text: payload.data.text,
-            emotion: "observing",
-            x: hasVisionPoint ? payload.data.x : fallbackPoint.x,
-            y: hasVisionPoint ? payload.data.y : fallbackPoint.y,
-            ...(hasVisionPoint
-              ? { coordinateSource: "vision" as const }
-              : fallbackPoint.coordinateSource
-                ? { coordinateSource: fallbackPoint.coordinateSource }
-                : {}),
-          };
-
-        } catch {
-          if (cancelled) break;
-          const fallbackText = `${selectedPersona.displayName} is inspecting the visible screen before the next action.`;
-          const fallbackPoint = getPostRunAttentionFallback({
-            events: liveEventsRef.current,
-            personaId: selectedPersona.id,
-            frameCursor: frame.cursor,
-            frameIndex: index,
-            frameCount: framesToNarrate.length,
-          });
-          narrationEvent = {
-            id: narrationId,
-            sessionId: frame.sessionId ?? selectedSession?.sessionId ?? frame.id,
-            personaId: selectedPersona.id,
-            cursor: frame.cursor,
-            step: frame.step ?? frame.cursor,
-            createdAt: new Date().toISOString(),
-            type: "narration",
-            text: fallbackText,
-            emotion: "observing",
-            x: fallbackPoint.x,
-            y: fallbackPoint.y,
-            ...(fallbackPoint.coordinateSource
-              ? { coordinateSource: fallbackPoint.coordinateSource }
-              : {}),
-          };
-        }
-
-        generatedEvents.push(narrationEvent);
-        const voiceItem = await synthesizeVoiceItem({
-          eventId: narrationId,
-          personaId: selectedPersona.id,
-          voiceSlot: selectedPersona.voiceSlot,
-          text: narrationEvent.text ?? "",
-        });
+      const indexedFrames = framesToNarrate.map((frame, index) => ({ frame, index }));
+      for (const batch of chunkReplayFrames(indexedFrames, 4)) {
         if (cancelled) break;
-        if (voiceItem) {
+        const results = await Promise.all(
+          batch.map(async ({ frame, index }) => {
+            if (cancelled || !frame.imageUrl) return null;
+            const narrationId = narrationEventIdForFrame(frame.id);
+            let narrationEvent: AgentRuntimeEvent;
+
+            try {
+              const response = await fetch("/api/screen-narration", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  imageUrl: frame.imageUrl,
+                  personaName: selectedPersona.displayName,
+                  personaDescription: `${selectedPersona.tagline}. ${selectedPersona.context}. ${selectedPersona.behaviors.join(" ")}`,
+                  objective: snapshot.objective ?? objective,
+                  currentUrl: frame.currentUrl ?? snapshot.url,
+                }),
+              });
+              const payload = (await response.json()) as ScreenNarrationPayload;
+              if (!response.ok || !payload.data?.text) {
+                throw new Error(payload.error?.message ?? "Screen narration failed.");
+              }
+              const hasVisionPoint =
+                typeof payload.data.x === "number" && typeof payload.data.y === "number";
+              const fallbackPoint = getPostRunAttentionFallback({
+                events: liveEventsRef.current,
+                personaId: selectedPersona.id,
+                frameCursor: frame.cursor,
+                frameIndex: index,
+                frameCount: framesToNarrate.length,
+              });
+              narrationEvent = {
+                id: narrationId,
+                sessionId: frame.sessionId ?? selectedSession?.sessionId ?? frame.id,
+                personaId: selectedPersona.id,
+                cursor: frame.cursor,
+                step: frame.step ?? frame.cursor,
+                createdAt: new Date().toISOString(),
+                type: "narration",
+                text: payload.data.text,
+                emotion: "observing",
+                x: hasVisionPoint ? payload.data.x : fallbackPoint.x,
+                y: hasVisionPoint ? payload.data.y : fallbackPoint.y,
+                ...(hasVisionPoint
+                  ? { coordinateSource: "vision" as const }
+                  : fallbackPoint.coordinateSource
+                    ? { coordinateSource: fallbackPoint.coordinateSource }
+                    : {}),
+              };
+            } catch {
+              const fallbackPoint = getPostRunAttentionFallback({
+                events: liveEventsRef.current,
+                personaId: selectedPersona.id,
+                frameCursor: frame.cursor,
+                frameIndex: index,
+                frameCount: framesToNarrate.length,
+              });
+              narrationEvent = {
+                id: narrationId,
+                sessionId: frame.sessionId ?? selectedSession?.sessionId ?? frame.id,
+                personaId: selectedPersona.id,
+                cursor: frame.cursor,
+                step: frame.step ?? frame.cursor,
+                createdAt: new Date().toISOString(),
+                type: "narration",
+                text: `${selectedPersona.displayName} is inspecting the visible screen before the next action.`,
+                emotion: "observing",
+                x: fallbackPoint.x,
+                y: fallbackPoint.y,
+                ...(fallbackPoint.coordinateSource
+                  ? { coordinateSource: fallbackPoint.coordinateSource }
+                  : {}),
+              };
+            }
+
+            const voiceItem = await synthesizeVoiceItem({
+              eventId: narrationId,
+              personaId: selectedPersona.id,
+              voiceSlot: selectedPersona.voiceSlot,
+              text: narrationEvent.text ?? "",
+            });
+            return voiceItem ? { narrationEvent, narrationId } : null;
+          }),
+        );
+        if (cancelled) break;
+
+        const prepared = results.filter(
+          (result): result is NonNullable<typeof result> => Boolean(result),
+        );
+        if (prepared.length > 0) {
+          setLiveEvents((current) =>
+            mergeAgentRuntimeEvents(
+              current,
+              prepared.map(({ narrationEvent }) => narrationEvent),
+            ),
+          );
           setPreparedReplayAudioIds((current) => {
             const next = new Set(current);
-            next.add(narrationId);
+            for (const { narrationId } of prepared) next.add(narrationId);
             return next;
           });
         }
-        completed += 1;
-      }
-
-      if (!cancelled && generatedEvents.length > 0) {
-        setLiveEvents((current) =>
-          mergeAgentRuntimeEvents(current, generatedEvents),
+        completed += prepared.length;
+        setStatusLine(
+          `Prepared ${completed}/${framesToNarrate.length} replay screens for ${selectedPersona.displayName}.`,
+        );
+        setLiveVoiceLine(
+          `Preparing synchronized replay · ${completed}/${framesToNarrate.length} screens ready.`,
         );
       }
+
       if (!cancelled && completed > 0) {
         setStatusLine(
           `Replay narration and heatmap evidence is ready for ${selectedPersona.displayName}.`,
@@ -1067,7 +1091,7 @@ export default function Home() {
     snapshot.objective,
     snapshot.url,
     synthesizeVoiceItem,
-    viewportFrames,
+    viewportFrameKey,
   ]);
 
   useEffect(() => {

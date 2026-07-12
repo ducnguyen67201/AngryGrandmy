@@ -76,6 +76,18 @@ export function nextReplayFrameIndex(
   return next < frameCount ? next : null;
 }
 
+export function chunkReplayFrames<T>(
+  frames: readonly T[],
+  batchSize: number,
+): T[][] {
+  const size = Math.max(1, Math.floor(batchSize));
+  const batches: T[][] = [];
+  for (let index = 0; index < frames.length; index += size) {
+    batches.push(frames.slice(index, index + size));
+  }
+  return batches;
+}
+
 function validPercent(value: number | undefined): value is number {
   return (
     typeof value === "number" &&

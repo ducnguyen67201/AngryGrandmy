@@ -28,6 +28,7 @@ Play action feels like watching a synchronized video.
 | 2 | Replay remains unavailable until every frame has narration and prepared audio. | `stays unready until every screen has both narration and prepared audio` | PASS |
 | 3 | Narration text without cached audio cannot falsely mark replay ready. | `does not treat narration without cached audio as replay-ready` | PASS |
 | 4 | Playback advances in order and stops on the last frame. | `advances after narration and stops on the final frame` | PASS |
+| 5 | Large runs are prepared in bounded parallel batches instead of one long serial queue. | `prepares large completed runs in bounded parallel batches` | PASS |
 
 ## Implementation behavior
 
@@ -37,6 +38,7 @@ Play action feels like watching a synchronized video.
 - Play advances only after the active frame narration completes; the previous
   fixed three-second frame timer was removed.
 - The frame is painted before its narration begins.
+- Preparation runs four frames at a time and reports incremental progress.
 - The completed-run UI no longer requires a per-frame “Narrate this screen”
   click and instead reports replay preparation/readiness.
 
