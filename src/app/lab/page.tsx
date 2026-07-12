@@ -9,6 +9,7 @@ import {
   type ImprovementProposal,
 } from "@/components/improvement-workspace";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
+import { GrannyArrival } from "@/components/granny-arrival";
 import {
   createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
@@ -63,6 +64,7 @@ import type {
 } from "@/lib/schemas/run";
 import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
 import { getPanelFeedback } from "@/lib/ui/panel-feedback";
+import { getRemainingGrannyArrivalDelay } from "@/lib/ui/granny-arrival";
 import { getReplayPersonaPresence } from "@/lib/ui/replay-persona-presence";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 import type { CalibrationSession } from "@/lib/calibration/calibration";
@@ -508,6 +510,7 @@ export default function Home() {
   const generatePlan = useCallback(async (
     statusMessage = "Generating the persona test plan before dispatch.",
   ) => {
+    const arrivalStartedAt = Date.now();
     setLoading(true);
     setStatusLine(statusMessage);
 
@@ -534,6 +537,15 @@ export default function Home() {
             createCalibratedPersona(activeCalibration),
           )
         : payload.data.analysis;
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const remainingArrivalDelay = getRemainingGrannyArrivalDelay({
+        startedAt: arrivalStartedAt,
+        now: Date.now(),
+        reducedMotion,
+      });
+      if (remainingArrivalDelay > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, remainingArrivalDelay));
+      }
       setSnapshot((current) => ({
         ...current,
         id: `plan-${Date.now()}`,
@@ -2961,7 +2973,15 @@ export default function Home() {
     <div className="simple-app">
       <header className="simple-header">
         <a className="simple-brand" href="#setup" aria-label="GrannySmith home">
-          <span>GS</span>
+          <Image
+            alt=""
+            aria-hidden="true"
+            className="simple-brand-avatar"
+            height={52}
+            priority
+            src="/grandma-linda-2d.png"
+            width={52}
+          />
           GrannySmith
         </a>
         <div className="simple-header-actions">
@@ -2981,7 +3001,9 @@ export default function Home() {
       </header>
 
       <main className="simple-shell">
-        {!snapshot.analysis && !isLiveView ? (
+        {loading && !snapshot.analysis && !isLiveView ? <GrannyArrival /> : null}
+
+        {!loading && !snapshot.analysis && !isLiveView ? (
         <section className="launch-scene" id="setup">
           <div className="simple-intro">
             <p className="simple-kicker">Synthetic user testing</p>

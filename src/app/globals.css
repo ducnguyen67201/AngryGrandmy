@@ -307,6 +307,13 @@
   .live-room-heading { padding: 14px 16px; align-items: flex-start; flex-direction: column; gap: 10px; }
   .agent-stage { padding: 10px; }
   .browser-screen { height: 310px; }
+  .granny-arrival { min-height: calc(100vh - 110px); }
+  .granny-arrival-stage { aspect-ratio: .82; border-width: 3px; border-radius: 20px; }
+  .granny-arrival-scene img { object-position: center; }
+  .granny-arrival-copy { right: 14px; bottom: 18px; left: 14px; padding: 10px; }
+  .granny-arrival-avatar { width: 44px; height: 44px; }
+  .granny-arrival-copy strong { min-width: 0; font-size: 14px; }
+  .granny-arrival-copy p, .granny-arrival-progress { display: none; }
   .provider-badges { flex-wrap: wrap; }
   .result-strip { grid-template-columns: 1fr; }
 }
@@ -328,6 +335,8 @@
   background: rgba(244, 241, 233, .86);
 }
 .simple-brand > span { border-radius: 50%; background: var(--obs-ink); }
+.simple-brand-avatar { width: 42px; height: 42px; object-fit: cover; border: 2px solid #fff8dc; border-radius: 50%; box-shadow: 0 0 0 2px #f1a84a, 0 5px 14px rgba(24,32,30,.15); transition: transform .2s ease; }
+.simple-brand:hover .simple-brand-avatar { transform: rotate(-4deg) scale(1.06); }
 .simple-header-actions { display: flex; align-items: center; gap: 16px; }
 .simple-header-actions > button,
 .quiet-back {
@@ -340,6 +349,32 @@
   font-weight: 800;
 }
 .simple-shell { width: min(1120px, calc(100% - 40px)); padding: 44px 0 28px; }
+.granny-arrival { min-height: calc(100vh - 140px); display: grid; place-items: center; }
+.granny-arrival-stage { position: relative; width: min(1040px, 100%); aspect-ratio: 16 / 9; overflow: hidden; border: 4px solid #fff9e8; border-radius: 28px; background: #dcefdc; box-shadow: 0 28px 80px rgba(37,55,48,.2); isolation: isolate; }
+.granny-arrival-scene { position: absolute; z-index: 1; inset: 0; margin: 0; }
+.granny-arrival-scene img { object-fit: cover; }
+.granny-arrival-scene.is-map { animation: granny-map-zoom 4.2s cubic-bezier(.22,.78,.2,1) forwards; }
+.granny-arrival-scene.is-room { opacity: 0; animation: granny-room-enter 4.2s cubic-bezier(.22,.78,.2,1) forwards; }
+.granny-arrival-vignette { position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(180deg, transparent 52%, rgba(20,39,33,.58)); }
+.granny-arrival-copy { position: absolute; z-index: 3; left: 28px; bottom: 28px; padding: 13px 17px 13px 12px; display: flex; align-items: center; gap: 12px; color: #17332b; border: 2px solid rgba(255,255,255,.76); border-radius: 18px; background: rgba(255,249,224,.94); box-shadow: 0 12px 30px rgba(20,39,33,.22); backdrop-filter: blur(10px); }
+.granny-arrival-avatar { width: 54px; height: 54px; object-fit: cover; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 0 0 3px #f1a84a; animation: grandma-bob 1.5s ease-in-out infinite; }
+.granny-arrival-copy small, .granny-arrival-copy strong, .granny-arrival-copy p { display: block; }
+.granny-arrival-copy small { color: #a66328; font-size: 8px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; }
+.granny-arrival-copy strong { position: relative; min-width: 260px; height: 22px; margin-top: 2px; font: 700 17px/22px Georgia, serif; }
+.granny-arrival-copy strong span { position: absolute; inset: 0 auto auto 0; white-space: nowrap; }
+.granny-arrival-copy strong .is-map { animation: granny-map-label 4.2s ease forwards; }
+.granny-arrival-copy strong .is-room { opacity: 0; animation: granny-room-label 4.2s ease forwards; }
+.granny-arrival-copy p { margin: 3px 0 0; color: #5b6c66; font-size: 9px; font-weight: 750; }
+.granny-arrival-progress { position: absolute; z-index: 3; right: 30px; bottom: 35px; display: flex; gap: 7px; }
+.granny-arrival-progress i { width: 9px; height: 9px; border: 2px solid rgba(255,255,255,.8); border-radius: 50%; background: rgba(255,255,255,.28); animation: granny-progress 4.2s ease forwards; }
+.granny-arrival-progress i:nth-child(2) { animation-delay: .7s; }
+.granny-arrival-progress i:nth-child(3) { animation-delay: 1.5s; }
+.granny-arrival-progress i:nth-child(4) { animation-delay: 2.3s; }
+@keyframes granny-map-zoom { 0% { opacity: 1; transform: scale(1); } 45% { opacity: 1; transform: scale(1.28) translate(-8%, 3%); } 56%, 100% { opacity: 0; transform: scale(1.72) translate(-14%, 6%); } }
+@keyframes granny-room-enter { 0%, 44% { opacity: 0; transform: scale(1.13); } 58% { opacity: 1; } 100% { opacity: 1; transform: scale(1); } }
+@keyframes granny-map-label { 0%, 40% { opacity: 1; transform: translateY(0); } 50%, 100% { opacity: 0; transform: translateY(-8px); } }
+@keyframes granny-room-label { 0%, 49% { opacity: 0; transform: translateY(8px); } 60%, 100% { opacity: 1; transform: translateY(0); } }
+@keyframes granny-progress { 0%, 18% { background: rgba(255,255,255,.28); transform: scale(.8); } 28%, 100% { background: #f1a84a; transform: scale(1); } }
 .launch-scene {
   width: min(650px, 100%);
   margin: clamp(26px, 7vh, 70px) auto 0;
@@ -1082,4 +1117,8 @@ a:focus-visible {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .route-energy-particle { display: none; }
+  .granny-arrival-scene.is-map { display: none; }
+  .granny-arrival-scene.is-room { opacity: 1; }
+  .granny-arrival-copy strong .is-map { display: none; }
+  .granny-arrival-copy strong .is-room { opacity: 1; }
 }
