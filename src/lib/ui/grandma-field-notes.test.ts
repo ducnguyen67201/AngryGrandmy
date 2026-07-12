@@ -75,6 +75,27 @@ describe("buildGrandmaFieldNotes", () => {
     });
   });
 
+  it("does not present a local launch placeholder as returned evidence", () => {
+    const run = createDemoRun();
+    const session = {
+      ...run.sessions[0],
+      sessionId: "launching-linda",
+      status: "queued" as const,
+      finding: null,
+      finishedAt: null,
+      latestActionLabel: "Requesting H Company session",
+      stepCount: 0,
+    };
+
+    expect(
+      buildGrandmaFieldNotes({
+        events: [],
+        personas: run.analysis!.personas,
+        sessions: [session],
+      }),
+    ).toEqual([]);
+  });
+
   it("keeps final findings in the feed after the run completes", () => {
     const run = createDemoRun();
     const notes = buildGrandmaFieldNotes({
