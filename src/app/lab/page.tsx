@@ -79,6 +79,7 @@ import {
 } from "@/lib/runtime/agent-events";
 import {
   getAgentCursorForFrame,
+  getPostRunAttentionFallback,
 } from "@/lib/runtime/agent-cursor";
 
 type ApiRunPayload = {
@@ -854,8 +855,13 @@ export default function Home() {
 
           const hasVisionPoint =
             typeof payload.data.x === "number" && typeof payload.data.y === "number";
-          const fallbackX = 42 + ((index % 4) * 8);
-          const fallbackY = 44 + ((index * 7) % 18);
+          const fallbackPoint = getPostRunAttentionFallback({
+            events: liveEvents,
+            personaId: selectedPersona.id,
+            frameCursor: frame.cursor,
+            frameIndex: index,
+            frameCount: framesToNarrate.length,
+          });
           const narrationEvent: AgentRuntimeEvent = {
             id: narrationId,
             sessionId: frame.sessionId ?? selectedSession?.sessionId ?? frame.id,
@@ -866,9 +872,13 @@ export default function Home() {
             type: "narration",
             text: payload.data.text,
             emotion: "observing",
-            x: hasVisionPoint ? payload.data.x : fallbackX,
-            y: hasVisionPoint ? payload.data.y : fallbackY,
-            ...(hasVisionPoint ? { coordinateSource: "vision" as const } : {}),
+            x: hasVisionPoint ? payload.data.x : fallbackPoint.x,
+            y: hasVisionPoint ? payload.data.y : fallbackPoint.y,
+            ...(hasVisionPoint
+              ? { coordinateSource: "vision" as const }
+              : fallbackPoint.coordinateSource
+                ? { coordinateSource: fallbackPoint.coordinateSource }
+                : {}),
           };
 
           generatedEvents.push(narrationEvent);
@@ -884,6 +894,13 @@ export default function Home() {
         } catch {
           if (!cancelled) {
             const fallbackText = `${selectedPersona.displayName} is inspecting the visible screen before the next action.`;
+            const fallbackPoint = getPostRunAttentionFallback({
+              events: liveEvents,
+              personaId: selectedPersona.id,
+              frameCursor: frame.cursor,
+              frameIndex: index,
+              frameCount: framesToNarrate.length,
+            });
             generatedEvents.push({
               id: narrationId,
               sessionId: frame.sessionId ?? selectedSession?.sessionId ?? frame.id,
@@ -894,8 +911,11 @@ export default function Home() {
               type: "narration",
               text: fallbackText,
               emotion: "observing",
-              x: 50,
-              y: 50,
+              x: fallbackPoint.x,
+              y: fallbackPoint.y,
+              ...(fallbackPoint.coordinateSource
+                ? { coordinateSource: fallbackPoint.coordinateSource }
+                : {}),
             });
             completed += 1;
           }
@@ -928,6 +948,7 @@ export default function Home() {
     snapshot.objective,
     snapshot.url,
     synthesizeVoiceItem,
+    liveEvents,
     viewportFrames,
   ]);
 
