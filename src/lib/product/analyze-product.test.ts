@@ -46,7 +46,7 @@ describe("buildProductAnalysis", () => {
     );
   });
 
-  it("asks the model to invent product-specific personas instead of reusing seed identities", () => {
+  it("keeps Linda as the older-adult anchor while tailoring the rest of the panel", () => {
     const request = {
       ...baseRequest,
       url: "https://developer-tools.example",
@@ -58,6 +58,7 @@ describe("buildProductAnalysis", () => {
     );
 
     expect(prompt).toContain("Invent four product-specific behavioral personas");
-    expect(prompt).toContain("Do not reuse Linda, Rosa, Mei, or Joan");
+    expect(prompt).toContain("Keep the linda persona as Linda, an older adult");
+    expect(prompt).toContain("Tailor her task and concerns to this product");
   });
 });
