@@ -82,3 +82,12 @@ Publishing remains intentionally out of scope for this stage: no commit, push, o
 - UI RED: `56a514c test: reproduce missing PR readiness UI`
 - UI GREEN: `3fb38cd feat: show validated diff and PR readiness`
 - Refactor: `376ec09 refactor: isolate repository write adapters`
+
+### Connection-mode cache regression
+
+The lab now invalidates a cached fallback proposal when it restarts with `GRANNYSMITH_FIX_AGENT_MODE=codex`, allowing the same finding to be regenerated against the newly connected repository.
+
+- RED: `pnpm exec vitest run src/lib/fixes/fix-job-cache.test.ts` failed because the cache policy was missing.
+- GREEN: 2 cache-mode tests passed; the full suite passed with 51 files and 182 tests.
+- RED checkpoint: `f42d311 test: reproduce stale fallback proposal cache`
+- GREEN checkpoint: `1a53757 fix: refresh fallback proposals after repo connection`
