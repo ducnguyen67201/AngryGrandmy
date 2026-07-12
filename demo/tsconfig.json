@@ -15,6 +15,7 @@
     "skipLibCheck": true,
     "jsx": "react-jsx",
     "allowJs": false,
+    "allowImportingTsExtensions": true,
     "incremental": true,
     "noEmit": true,
     "plugins": [
