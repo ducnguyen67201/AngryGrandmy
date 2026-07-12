@@ -44,7 +44,7 @@ export default function Home() {
             </p>
             <h1>
               Watch real-world personas
-              <span>test every path.</span>
+              <span className="hero-title-line">test every path.</span>
             </h1>
             <p className="hero-description">
               Four computer-use agents explore your product as different people. See where they
