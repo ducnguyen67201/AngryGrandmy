@@ -50,6 +50,39 @@ describe("buildGrandmaFieldNotes", () => {
     });
   });
 
+  it("keeps only the newest screen arrival for each tester", () => {
+    const run = createDemoRun();
+    const viewport = (
+      id: string,
+      personaId: string,
+      cursor: number,
+    ): AgentRuntimeEvent => ({
+      id,
+      sessionId: `session-${personaId}`,
+      personaId,
+      cursor,
+      step: cursor,
+      createdAt: `2026-07-11T20:00:${String(cursor).padStart(2, "0")}.000Z`,
+      type: "viewport",
+      imageUrl: `data:image/png;base64,${id}`,
+    });
+
+    const notes = buildGrandmaFieldNotes({
+      events: [
+        viewport("linda-screen-1", "linda", 1),
+        viewport("linda-screen-2", "linda", 2),
+        viewport("rosa-screen-1", "rosa", 3),
+      ],
+      personas: run.analysis!.personas,
+      sessions: [],
+    });
+
+    expect(notes.map((note) => note.id)).toEqual([
+      "rosa-screen-1",
+      "linda-screen-2",
+    ]);
+  });
+
   it("shows returned session progress before the final finding is ready", () => {
     const run = createDemoRun();
     const session = {
@@ -94,6 +127,29 @@ describe("buildGrandmaFieldNotes", () => {
         sessions: [session],
       }),
     ).toEqual([]);
+  });
+
+  it("translates provider progress into human language", () => {
+    const run = createDemoRun();
+    const session = {
+      ...run.sessions[0],
+      status: "running" as const,
+      finding: null,
+      finishedAt: null,
+      latestActionLabel: "H agent is running · 7 steps",
+      stepCount: 7,
+    };
+
+    expect(
+      buildGrandmaFieldNotes({
+        events: [],
+        personas: run.analysis!.personas,
+        sessions: [session],
+      })[0],
+    ).toMatchObject({
+      headline: "Linda is still exploring",
+      detail: "Looking through the product now.",
+    });
   });
 
   it("keeps final findings in the feed after the run completes", () => {
