@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import Image from "next/image";
 import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, MousePointer2, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
+import {
+  ImprovementWorkspace,
+  type ImprovementProposal,
+} from "@/components/improvement-workspace";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import {
   createLiveVoiceQueueItem,
@@ -87,7 +91,10 @@ import {
   narrationEventIdForFrame,
   nextReplayFrameIndex,
 } from "@/lib/replay/synchronized-replay";
-import { selectImprovementCandidate } from "@/lib/fixes/improvement-handoff";
+import {
+  selectImprovementCandidate,
+  type ImprovementCandidate,
+} from "@/lib/fixes/improvement-handoff";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -217,6 +224,11 @@ export default function Home() {
   const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
   const [fixRequestIds, setFixRequestIds] = useState<Set<string>>(() => new Set());
   const [improvementLoading, setImprovementLoading] = useState(false);
+  const [improvementCandidate, setImprovementCandidate] =
+    useState<ImprovementCandidate | null>(null);
+  const [improvementProposal, setImprovementProposal] =
+    useState<ImprovementProposal | null>(null);
+  const [improvementError, setImprovementError] = useState<string | null>(null);
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
   const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
@@ -1983,11 +1995,17 @@ export default function Home() {
       return;
     }
 
+    setImprovementCandidate(candidate);
+    setImprovementProposal(null);
+    setImprovementError(null);
+
     const persona = snapshot.analysis?.personas.find(
       (item) => item.id === candidate.personaId,
     );
     if (!persona) {
-      setStatusLine("The finding's tester context is unavailable.");
+      const message = "The finding's tester context is unavailable.";
+      setImprovementError(message);
+      setStatusLine(message);
       return;
     }
 
@@ -2011,19 +2029,22 @@ export default function Home() {
         }),
       });
       if (!response.ok) throw new Error("Improvement proposal was not accepted.");
+      const payload = (await response.json()) as { data?: ImprovementProposal };
+      if (!payload.data) throw new Error("The proposal response was empty.");
 
       setFixRequestIds((current) => new Set(current).add(requestId));
+      setImprovementProposal(payload.data);
       setSnapshot((current) => ({
         ...current,
         selectedPersonaId: candidate.personaId,
       }));
       setStatusLine("Improvement proposal queued from the highest-impact finding.");
     } catch (error) {
-      setStatusLine(
-        error instanceof Error
-          ? error.message
-          : "Could not prepare the improvement proposal.",
-      );
+      const message = error instanceof Error
+        ? error.message
+        : "Could not prepare the improvement proposal.";
+      setImprovementError(message);
+      setStatusLine(message);
     } finally {
       setImprovementLoading(false);
     }
@@ -3330,6 +3351,14 @@ export default function Home() {
               <button onClick={() => handleDownloadReport("markdown")} type="button"><Download size={15} /> Report</button>
             </div>
           </section>
+          {improvementCandidate ? (
+            <ImprovementWorkspace
+              candidate={improvementCandidate}
+              error={improvementError}
+              loading={improvementLoading}
+              proposal={improvementProposal}
+            />
+          ) : null}
           </details>
         ) : null}
 
