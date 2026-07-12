@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, Clock3, MousePointer2 } from "lucide-react";
+import { AlertTriangle, Check, Clock3, Database, MousePointer2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { RunSnapshot, VisualAgentState } from "@/lib/schemas/run";
 
@@ -12,6 +12,7 @@ const steps = [
   "Review insurance step",
   "Check appointment details",
   "Reach safe stop",
+  "Collect training episode",
 ] as const;
 
 const personaColors = ["#b890ff", "#55d8c1", "#ffbb66", "#ff756d"];
@@ -212,6 +213,27 @@ export function AnimatedAgentJourney({ snapshot }: { snapshot: RunSnapshot }) {
         <div className="mock-button">Review details</div>
       </BrowserCard>
 
+      <BrowserCard
+        activity="Collecting dataset"
+        actor="GS"
+        accent="#65d7f1"
+        active={activeStep === 7}
+        className="journey-card-dataset"
+        cursorPath={{ x: [18, 34, 66, 80, 18], y: [72, 42, 42, 72, 72] }}
+        delay={0.2}
+        mode="collect"
+        title="Training episode"
+      >
+        <div className="mock-dataset-heading"><Database size={12} /> Model-ready row</div>
+        <div className="mock-dataset-grid">
+          <span>screen</span>
+          <span>action</span>
+          <span>outcome</span>
+          <span>ux label</span>
+        </div>
+        <div className="mock-dataset-badge">6 training points</div>
+      </BrowserCard>
+
       <aside
         className={`persona-observation ${activeStep === 4 ? "is-active" : ""}`}
       >
@@ -297,7 +319,7 @@ function BrowserCard({
   className: string;
   cursorPath: { x: number[]; y: number[] };
   delay: number;
-  mode: "scan" | "click" | "type" | "pause" | "review";
+  mode: "scan" | "click" | "type" | "pause" | "review" | "collect";
   title: string;
 }) {
   return (
@@ -337,7 +359,7 @@ function ComputerUseActor({
   active: boolean;
   cursorPath: { x: number[]; y: number[] };
   delay: number;
-  mode: "scan" | "click" | "type" | "pause" | "review";
+  mode: "scan" | "click" | "type" | "pause" | "review" | "collect";
 }) {
   const startX = `${cursorPath.x[0]}%`;
   const startY = `${cursorPath.y[0]}%`;
@@ -361,7 +383,7 @@ function ComputerUseActor({
       <div className={`computer-use-status computer-use-${mode} ${active ? "is-active" : ""}`}>
         <span />
         {activity}
-        {mode === "type" && <i aria-hidden="true">•••</i>}
+      {(mode === "type" || mode === "collect") && <i aria-hidden="true">•••</i>}
       </div>
       {mode === "scan" && <div aria-hidden="true" className="agent-scan-line" />}
       <div

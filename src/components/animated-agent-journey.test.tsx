@@ -17,8 +17,9 @@ describe("AnimatedAgentJourney", () => {
       screen.getByRole("region", { name: /live synthetic usability trajectory/i }),
     ).toBeInTheDocument();
     expect(screen.getByText("Live trajectory")).toBeInTheDocument();
-    expect(screen.getByText("Step 4 of 7")).toBeInTheDocument();
+    expect(screen.getByText("Step 4 of 8")).toBeInTheDocument();
     expect(screen.getByText("Four personas observing")).toBeInTheDocument();
+    expect(screen.getByText("Collect training episode")).toBeInTheDocument();
   });
 
   it("identifies every persona and exposes their current result", () => {
@@ -37,7 +38,7 @@ describe("AnimatedAgentJourney", () => {
 
     act(() => vi.advanceTimersByTime(4200));
 
-    expect(screen.getByText("Step 5 of 7")).toBeInTheDocument();
+    expect(screen.getByText("Step 5 of 8")).toBeInTheDocument();
   });
 
   it("keeps the initial step still when reduced motion is requested", () => {
@@ -51,7 +52,7 @@ describe("AnimatedAgentJourney", () => {
 
     act(() => vi.advanceTimersByTime(4800));
 
-    expect(screen.getByText("Step 4 of 7")).toBeInTheDocument();
+    expect(screen.getByText("Step 4 of 8")).toBeInTheDocument();
   });
 
   it("falls back to queued personas when live session data is unavailable", () => {
@@ -68,12 +69,13 @@ describe("AnimatedAgentJourney", () => {
   it("shows an independent computer-use agent inside every browser window", () => {
     render(createElement(AnimatedAgentJourney, { snapshot: createDemoRun() }));
 
-    expect(screen.getAllByLabelText(/computer-use agent/i)).toHaveLength(5);
+    expect(screen.getAllByLabelText(/computer-use agent/i)).toHaveLength(6);
     expect(screen.getByText("Scanning results")).toBeInTheDocument();
     expect(screen.getByText("Comparing options")).toBeInTheDocument();
     expect(screen.getByText("Entering details")).toBeInTheDocument();
     expect(screen.getByText("Waiting for context")).toBeInTheDocument();
     expect(screen.getByText("Reviewing summary")).toBeInTheDocument();
+    expect(screen.getByText("Collecting dataset")).toBeInTheDocument();
   });
 
   it("keeps a stable route-particle tree when reduced motion is requested", () => {
@@ -95,6 +97,6 @@ describe("AnimatedAgentJourney", () => {
 
     act(() => window.dispatchEvent(new Event("grannysmith:release-panel")));
 
-    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 8")).toBeInTheDocument();
   });
 });

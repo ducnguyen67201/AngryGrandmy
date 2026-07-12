@@ -849,6 +849,7 @@ a:focus-visible {
 .journey-card-form { width: 23%; left: 44%; top: 43%; animation-delay: -2.7s; }
 .journey-card-blocked { width: 21%; left: 17%; top: 67%; border-color: rgba(255, 117, 109, .7); animation-delay: -3.2s; }
 .journey-card-success { width: 22%; left: 61%; top: 69%; border-color: rgba(85, 216, 193, .6); animation-delay: -.7s; }
+.journey-card-dataset { width: 24%; left: 62%; top: 24%; border-color: rgba(101, 215, 241, .72); animation-delay: -2.1s; }
 .browser-chrome { height: 20px; padding: 0 7px; display: flex; align-items: center; gap: 4px; color: #8290ab; background: #cfdaed; font-size: 7px; }
 .browser-chrome span { width: 4px; height: 4px; border-radius: 50%; background: #7185a8; }
 .browser-chrome b { margin-left: 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -866,6 +867,10 @@ a:focus-visible {
 .mock-muted-button { color: #7e8ba2; background: #c7d0df; }
 .mock-warning, .mock-success { margin-bottom: 7px; display: flex; align-items: center; gap: 4px; color: #d65652; font-weight: 800; }
 .mock-success { color: #2e967d; }
+.mock-dataset-heading { display: flex; align-items: center; gap: 4px; color: #1f6d61; font-weight: 900; }
+.mock-dataset-grid { margin-top: 7px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.mock-dataset-grid span { padding: 4px; color: #406461; border: 1px solid #c9e4df; border-radius: 4px; background: #f4fffb; font-size: 5.5px; font-weight: 850; text-align: center; text-transform: uppercase; letter-spacing: .05em; }
+.mock-dataset-badge { margin-top: 7px; padding: 5px 7px; color: white; border-radius: 4px; background: linear-gradient(90deg, #288d77, #4d89ff); font-weight: 900; text-align: center; }
 .computer-use-status {
   position: absolute; z-index: 3; top: 3px; right: 4px; max-width: 64%; padding: 2px 4px;
   display: flex; align-items: center; gap: 3px; overflow: hidden; white-space: nowrap;
@@ -882,6 +887,7 @@ a:focus-visible {
 .computer-use-status.is-active i { animation: typing-dots 1.4s steps(3) infinite; }
 .computer-use-pause > span { background: #ffbb66; box-shadow: 0 0 5px #ffbb66; }
 .computer-use-review > span { background: #7b9fff; box-shadow: 0 0 5px #7b9fff; }
+.computer-use-collect > span { background: #65d7f1; box-shadow: 0 0 5px #65d7f1; }
 .in-window-agent {
   position: absolute; z-index: 6; width: 16px; height: 16px; pointer-events: none;
   color: #fff; filter: drop-shadow(0 1px 2px rgba(5, 10, 30, .85)) drop-shadow(0 0 5px var(--actor-accent));
@@ -909,6 +915,7 @@ a:focus-visible {
 .in-window-agent-type .in-window-click { border-color: #55d8c1; background: rgba(85, 216, 193, .18); }
 .in-window-agent-pause .in-window-click { border-color: #ffbb66; animation-duration: 6.4s; }
 .in-window-agent-review .in-window-click { border-color: #55d8c1; }
+.in-window-agent-collect .in-window-click { border-color: #65d7f1; background: rgba(101, 215, 241, .18); }
 .agent-scan-line {
   position: absolute; z-index: 2; left: 4px; right: 4px; top: 24%; height: 9px;
   border-top: 1px solid rgba(70, 139, 255, .55);
