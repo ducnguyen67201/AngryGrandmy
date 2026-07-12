@@ -55,3 +55,30 @@ The workspace now appears immediately with the selected recommendation and evide
 
 - RED checkpoint: `12b1cf4 test: reproduce invisible improvement proposal result`
 - GREEN checkpoint: `88a224c fix: reveal improvement progress and proposal results`
+
+## Connected repository and PR readiness
+
+The PR preparation stage is deliberately separate from publishing. It requires the configured repository id to match, refuses an already-dirty target, runs a write-scoped local coding agent, captures the target-only Git diff, and runs the target's available test/typecheck/lint/build scripts. `readyForPr` is true only when a non-empty diff exists and every discovered check passes.
+
+| Stage | Command | Result | Evidence |
+|---|---|---|---|
+| Service RED | `pnpm exec vitest run src/lib/fixes/prepare-repository-change.test.ts` | Expected failure | The repository preparation service did not exist. |
+| Service GREEN | Same command after implementation | PASS | 4 repository policy and readiness tests passed. |
+| API RED | `pnpm exec vitest run src/app/api/improvements/prepare/route.test.ts` | Expected failure | The guarded preparation route did not exist. |
+| API GREEN | Same command after implementation | PASS | Valid input returned an unpublished diff; malformed input returned 422. |
+| UI RED | `pnpm exec vitest run src/components/improvement-workspace.test.tsx` | Expected failure | No prepare-change action or PR-ready diff state was visible. |
+| UI GREEN | Same command after implementation | PASS | Connected, disconnected, preparing, checks, diff, and PR-ready states render correctly. |
+| Full suite | `pnpm test` | PASS | 50 files and 179 tests passed before the coverage refactor; the focused suite added one additional UI test. |
+| Coverage | Focused three-target Vitest coverage command | PASS | 93.75% statements, 83.33% branches, 100% functions, and 96.55% lines. |
+| Security | `pnpm audit --audit-level high` | PASS | No known vulnerabilities found. |
+| Build and types | `pnpm build && pnpm typecheck` | PASS | Production build and TypeScript validation completed successfully. |
+
+Publishing remains intentionally out of scope for this stage: no commit, push, or GitHub PR is created without a later explicit user action.
+
+- Service RED: `5862c64 test: reproduce missing PR-ready repository change`
+- Service GREEN: `f407cb2 feat: prepare validated changes in connected repository`
+- API RED: `6829c37 test: reproduce missing repository preparation endpoint`
+- API GREEN: `c21d556 feat: expose guarded code change preparation API`
+- UI RED: `56a514c test: reproduce missing PR readiness UI`
+- UI GREEN: `3fb38cd feat: show validated diff and PR readiness`
+- Refactor: `376ec09 refactor: isolate repository write adapters`
