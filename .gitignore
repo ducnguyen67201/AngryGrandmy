@@ -19,6 +19,9 @@
 /.next/
 /.next-app/
 /.next-marketing/
+/demo/.next/
+/demo/node_modules/
+/demo/tsconfig.tsbuildinfo
 /out/
 
 # production
