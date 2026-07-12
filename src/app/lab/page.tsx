@@ -6,11 +6,16 @@ import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, E
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import {
+  createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
-  getScreenNarrationCandidate,
+  getLiveVoicePlaybackMode,
+  getPostRunScreenNarrationFrames,
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
+  shouldSpeakCurrentNarrationOnEnable,
+  shouldPrimeReplayNarration,
   shouldEnableLiveVoiceForDispatch,
+  type ScreenNarrationEvent,
   type LiveVoiceQueueItem,
 } from "@/lib/audio/live-voice-queue";
 import { createDemoRun } from "@/lib/fixtures/demo-run";
@@ -21,7 +26,10 @@ import {
 } from "@/lib/hotspots/build-hotspots";
 import { buildLiveVisualHotspots } from "@/lib/hotspots/build-live-hotspots";
 import { buildHeatmapDensityBlobs } from "@/lib/hotspots/build-heatmap-density";
-import { buildReplayAttentionHotspots } from "@/lib/hotspots/build-replay-attention";
+import {
+  buildReplayAttentionHotspots,
+  filterReplayHotspotsForFrame,
+} from "@/lib/hotspots/build-replay-attention";
 import {
   buildJudgeSummary,
   buildMarkdownReport,
@@ -37,6 +45,7 @@ import {
   shouldRestorePersistedRun,
 } from "@/lib/persistence/lab-state";
 import {
+  DEFAULT_TESTER_COUNT,
   getDispatchedPersonas,
   isTesterCount,
   TESTER_COUNT_OPTIONS,
@@ -70,6 +79,7 @@ import {
 } from "@/lib/runtime/agent-events";
 import {
   getAgentCursorForFrame,
+  getPostRunAttentionFallback,
 } from "@/lib/runtime/agent-cursor";
 
 type ApiRunPayload = {
@@ -167,6 +177,7 @@ const DEMO_PRESETS = [
 
 const DEFAULT_OBJECTIVE =
   "Find the primary user workflow and stop before an irreversible action.";
+const DEFAULT_TARGET_URL = "https://demo-health.example";
 const LAUNCHING_SESSION_PREFIX = "launching-";
 const LIVE_EVENT_POLL_INTERVAL_MS = 1_800;
 const SILENT_AUDIO_DATA_URL =
@@ -174,10 +185,10 @@ const SILENT_AUDIO_DATA_URL =
 
 export default function Home() {
   const [snapshot, setSnapshot] = useState<RunSnapshot>(() => createInitialRun());
-  const [targetUrl, setTargetUrl] = useState("https://demo-health.example");
+  const [targetUrl, setTargetUrl] = useState(DEFAULT_TARGET_URL);
   const [objective, setObjective] = useState(DEFAULT_OBJECTIVE);
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const [testerCount, setTesterCount] = useState<TesterCount>(4);
+  const [testerCount, setTesterCount] = useState<TesterCount>(DEFAULT_TESTER_COUNT);
   const [authorized, setAuthorized] = useState(true);
   const [personasAccepted, setPersonasAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -186,7 +197,7 @@ export default function Home() {
   const [voiceLine, setVoiceLine] = useState("Voice ready when a finding is selected.");
   const [liveVoiceEnabled, setLiveVoiceEnabled] = useState(false);
   const [liveVoiceLine, setLiveVoiceLine] = useState(
-    "Enable live voice to hear new agent thoughts.",
+    "Enable live voice to hear screen action narration.",
   );
   const [exportLine, setExportLine] = useState("Report package ready.");
   const [localizedHotspots, setLocalizedHotspots] = useState<VisualHotspot[] | null>(null);
@@ -214,8 +225,10 @@ export default function Home() {
   const liveVoicePlayingRef = useRef(false);
   const spokenLiveEventIds = useRef(new Set<string>());
   const screenNarratedEventIds = useRef(new Set<string>());
+  const postRunNarratedFrameIds = useRef(new Set<string>());
   const lastScreenNarrationAt = useRef(0);
   const replaySpokenEventIds = useRef(new Set<string>());
+  const autoPlanFromUrl = useRef(false);
   const sessionsRef = useRef(snapshot.sessions);
   sessionsRef.current = snapshot.sessions;
   const liveMode = snapshot.phase === "running";
@@ -383,19 +396,34 @@ export default function Home() {
   const liveViewport = viewportFrames[activeViewportFrameIndex];
   const eventCursorLimit =
     replayFrameIndex === null ? Number.POSITIVE_INFINITY : liveViewport?.cursor ?? 0;
+  const previousReplayCursor =
+    replayFrameIndex !== null && activeViewportFrameIndex > 0
+      ? viewportFrames[activeViewportFrameIndex - 1]?.cursor ?? null
+      : null;
+  const previousReplayStep =
+    replayFrameIndex !== null && activeViewportFrameIndex > 0
+      ? viewportFrames[activeViewportFrameIndex - 1]?.step ?? null
+      : null;
+  const isEventInReplayFrame = useCallback(
+    (event: { cursor: number }) =>
+      replayFrameIndex === null ||
+      (event.cursor <= eventCursorLimit &&
+        (previousReplayCursor === null || event.cursor > previousReplayCursor)),
+    [eventCursorLimit, previousReplayCursor, replayFrameIndex],
+  );
   const liveNarration = [...liveEvents].reverse().find(
     (event) =>
       event.type === "narration" &&
       event.personaId === selectedPersona?.id &&
-      event.cursor <= eventCursorLimit,
+      isEventInReplayFrame(event),
   );
   const liveFrustration = [...liveEvents].reverse().find(
     (event) =>
       event.type === "frustration" &&
       event.personaId === selectedPersona?.id &&
-      event.cursor <= eventCursorLimit,
+      isEventInReplayFrame(event),
   );
-  const selectedHotspots = displayedHotspots.filter(
+  const selectedSummaryHotspots = displayedHotspots.filter(
     (hotspot) => hotspot.personaId === selectedPersona?.id,
   );
   const replayAttentionHotspots = useMemo(
@@ -405,10 +433,26 @@ export default function Home() {
         : buildReplayAttentionHotspots(
             liveEvents,
             selectedPersona?.id,
+            previousReplayCursor,
             eventCursorLimit,
           ),
-    [eventCursorLimit, liveEvents, replayFrameIndex, selectedPersona?.id],
+    [eventCursorLimit, liveEvents, previousReplayCursor, replayFrameIndex, selectedPersona?.id],
   );
+  const replayFindingHotspots = useMemo(
+    () =>
+      replayFrameIndex === null || !liveViewport
+        ? []
+        : filterReplayHotspotsForFrame({
+            hotspots: selectedSummaryHotspots,
+            previousStep: previousReplayStep,
+            currentStep: liveViewport.step ?? liveViewport.cursor,
+          }),
+    [liveViewport, previousReplayStep, replayFrameIndex, selectedSummaryHotspots],
+  );
+  const selectedHotspots =
+    replayFrameIndex === null
+      ? selectedSummaryHotspots
+      : [...replayAttentionHotspots, ...replayFindingHotspots];
   const agentCursorPoint = selectedPersona
     ? getAgentCursorForFrame({
         events: liveEvents,
@@ -424,11 +468,72 @@ export default function Home() {
   const hasLiveNarration = Boolean(liveNarration?.text);
   const selectedNarration =
     liveNarration?.text ??
-    selectedSession?.finding?.frictionEvents[0]?.narratedObservation ??
-    selectedSession?.finding?.summary ??
+    (replayFrameIndex === null
+      ? selectedSession?.finding?.frictionEvents[0]?.narratedObservation ??
+        selectedSession?.finding?.summary
+      : liveViewport?.imageUrl
+        ? `${selectedPersona?.displayName ?? "The agent"} is moving through this screen.`
+        : null) ??
     selectedPersona?.introLine ??
     "No persona finding is ready yet.";
-  const selectedFriction = liveFrustration ? {step:liveFrustration.step,category:liveFrustration.category??"clarity",severity:liveFrustration.severity??3,observation:liveFrustration.observation??"Usability barrier",visibleEvidence:liveFrustration.visibleEvidence??"Live agent evidence",recommendation:liveFrustration.recommendation??"Remove this barrier",narratedObservation:liveFrustration.observation??"This is frustrating",recovered:false} : selectedSession?.finding?.frictionEvents[0] ?? null;
+  const selectedFriction = liveFrustration ? {step:liveFrustration.step,category:liveFrustration.category??"clarity",severity:liveFrustration.severity??3,observation:liveFrustration.observation??"Usability barrier",visibleEvidence:liveFrustration.visibleEvidence??"Live agent evidence",recommendation:liveFrustration.recommendation??"Remove this barrier",narratedObservation:liveFrustration.observation??"This is frustrating",recovered:false} : replayFrameIndex === null ? selectedSession?.finding?.frictionEvents[0] ?? null : null;
+
+  const generatePlan = useCallback(async (
+    statusMessage = "Generating the persona test plan before dispatch.",
+  ) => {
+    setLoading(true);
+    setStatusLine(statusMessage);
+
+    try {
+      const response = await fetch("/api/generate-test-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: targetUrl,
+          objective,
+          authorizationConfirmed: authorized,
+        }),
+      });
+      const payload = (await response.json()) as TestPlanPayload;
+
+      if (!response.ok || !payload.data?.analysis) {
+        throw new Error(payload.error?.message ?? "Could not generate a persona plan.");
+      }
+
+      const now = new Date().toISOString();
+      const plannedAnalysis = activeCalibration
+        ? mergeCalibratedPersona(
+            payload.data.analysis,
+            createCalibratedPersona(activeCalibration),
+          )
+        : payload.data.analysis;
+      setSnapshot((current) => ({
+        ...current,
+        id: `plan-${Date.now()}`,
+        phase: "revealing",
+        url: targetUrl,
+        objective,
+        analysis: plannedAnalysis,
+        sessions: [],
+        selectedPersonaId: activeCalibration
+          ? `calibrated-${activeCalibration.id}`
+          : plannedAnalysis.personas[0]?.id ?? null,
+        report: null,
+        error: null,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      setPersonasAccepted(false);
+      setLocalizedHotspots(null);
+      setStatusLine(
+        `Generated ${plannedAnalysis.personas.length} personas${activeCalibration ? ", including the approved behavioral proxy," : ""} with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
+      );
+    } catch (error) {
+      setStatusLine(error instanceof Error ? error.message : "Could not generate a persona plan.");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeCalibration, authorized, objective, targetUrl]);
 
   const stopLiveVoicePlayback = useCallback((message?: string) => {
     liveVoiceQueueRef.current = [];
@@ -440,6 +545,9 @@ export default function Home() {
       audio.pause();
       audio.removeAttribute("src");
       audio.load();
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
     }
     if (message) setLiveVoiceLine(message);
   }, []);
@@ -458,24 +566,34 @@ export default function Home() {
     const cached = liveVoiceAudioCacheRef.current.get(eventId);
     if (cached) return cached;
 
-    const response = await fetch("/api/voice-reaction", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ personaId, voiceSlot, text }),
-    });
-    const payload = (await response.json()) as VoiceReactionPayload;
-    const audioSrc = payload.data?.audioBase64
-      ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
-      : payload.data?.audioUrl;
-    if (!response.ok || !audioSrc || !payload.data?.transcript) return null;
-
-    const item = {
+    const fallback = createLiveVoiceQueueItem({
       eventId,
-      audioSrc,
-      transcript: payload.data.transcript,
-    };
-    liveVoiceAudioCacheRef.current.set(eventId, item);
-    return item;
+      audioSrc: null,
+      transcript: text,
+    });
+    try {
+      const response = await fetch("/api/voice-reaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personaId, voiceSlot, text }),
+      });
+      const payload = (await response.json()) as VoiceReactionPayload;
+      const audioSrc = payload.data?.audioBase64
+        ? `data:${payload.data.audioMime ?? "audio/wav"};base64,${payload.data.audioBase64}`
+        : payload.data?.audioUrl;
+      const item = response.ok && payload.data?.transcript
+        ? createLiveVoiceQueueItem({
+            eventId,
+            audioSrc: audioSrc ?? null,
+            transcript: payload.data.transcript,
+          })
+        : fallback;
+      if (item) liveVoiceAudioCacheRef.current.set(eventId, item);
+      return item;
+    } catch {
+      if (fallback) liveVoiceAudioCacheRef.current.set(eventId, fallback);
+      return fallback;
+    }
   }, []);
 
   const playNextLiveVoiceItem = useCallback(function playNextLiveVoiceItem() {
@@ -483,25 +601,50 @@ export default function Home() {
     const next = liveVoiceQueueRef.current.shift();
     if (!next) {
       setLiveVoiceLine(
-        `Listening for ${selectedPersona?.displayName ?? "the selected persona"}...`,
+        `Watching ${selectedPersona?.displayName ?? "the selected persona"}'s screen...`,
       );
+      return;
+    }
+
+    liveVoicePlayingRef.current = true;
+    const playbackMode = getLiveVoicePlaybackMode(next);
+    setLiveVoiceLine(
+      `${playbackMode === "browser-speech" ? "Browser speaking" : "Gradium speaking"}: “${next.transcript}”`,
+    );
+
+    const finish = () => {
+      liveVoicePlayingRef.current = false;
+      playNextLiveVoiceItem();
+    };
+
+    if (playbackMode === "browser-speech") {
+      if (!("speechSynthesis" in window)) {
+        setLiveVoiceLine("No speech engine is available in this browser.");
+        finish();
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(next.transcript);
+      utterance.rate = 0.9;
+      utterance.pitch = 1.05;
+      utterance.onend = finish;
+      utterance.onerror = () => {
+        setLiveVoiceLine("Browser speech failed. Try narrating the screen again.");
+        finish();
+      };
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
       return;
     }
 
     const audio = liveVoiceAudioRef.current ?? new Audio();
     liveVoiceAudioRef.current = audio;
-    liveVoicePlayingRef.current = true;
     audio.volume = 1;
-    audio.src = next.audioSrc;
-    setLiveVoiceLine(`Speaking: “${next.transcript}”`);
-
-    const finish = () => {
-      liveVoicePlayingRef.current = false;
+    audio.src = next.audioSrc!;
+    audio.onended = () => {
       audio.onended = null;
       audio.onerror = null;
-      playNextLiveVoiceItem();
+      finish();
     };
-    audio.onended = finish;
     audio.onerror = () => {
       setLiveVoiceLine("Could not play that reaction. Listening for the next one...");
       finish();
@@ -549,14 +692,38 @@ export default function Home() {
       liveVoiceEnabledRef.current = true;
       setLiveVoiceEnabled(true);
       setLiveVoiceLine(
-        `Listening for ${selectedPersona?.displayName ?? "the selected persona"}'s next thought...`,
+        `Watching ${selectedPersona?.displayName ?? "the selected persona"}'s screen...`,
       );
+      if (!liveViewport?.imageUrl && shouldSpeakCurrentNarrationOnEnable({
+        runComplete,
+        selectedPersonaId: selectedPersona?.id,
+        narration: selectedNarration,
+      }) && selectedPersona) {
+        setLiveVoiceLine(`No screen frame is available, so preparing ${selectedPersona.displayName}'s finding...`);
+        const voiceItem = await synthesizeVoiceItem({
+          eventId: `voice-enable:${selectedSession?.sessionId ?? selectedPersona.id}:${selectedNarration}`,
+          personaId: selectedPersona.id,
+          voiceSlot: selectedPersona.voiceSlot,
+          text: selectedNarration,
+        });
+        if (voiceItem) queueLiveVoiceItem(voiceItem);
+        else setLiveVoiceLine("Could not prepare speech. Try narrating the screen again.");
+      }
     } catch {
       liveVoiceEnabledRef.current = false;
       setLiveVoiceEnabled(false);
       setLiveVoiceLine("Your browser blocked audio. Allow sound, then try again.");
     }
-  }, [selectedPersona?.displayName, stopLiveVoicePlayback]);
+  }, [
+    queueLiveVoiceItem,
+    liveViewport?.imageUrl,
+    runComplete,
+    selectedNarration,
+    selectedPersona,
+    selectedSession?.sessionId,
+    stopLiveVoicePlayback,
+    synthesizeVoiceItem,
+  ]);
 
   const handleReplayToggle = useCallback(async () => {
     if (replayPlaying) {
@@ -571,17 +738,33 @@ export default function Home() {
     if (!liveVoiceEnabledRef.current) return;
 
     replaySpokenEventIds.current.clear();
+    screenNarratedEventIds.current.clear();
+    lastScreenNarrationAt.current = 0;
     stopLiveVoicePlayback("Preparing synchronized replay narration...");
+    const replayStartFrame = activeViewportFrameIndex >= viewportFrames.length - 1
+      ? viewportFrames[0]
+      : liveViewport;
     if (activeViewportFrameIndex >= viewportFrames.length - 1) {
       setReplayFrameIndex(0);
     }
     setReplayPlaying(true);
+    if (shouldPrimeReplayNarration({
+      enabled: liveVoiceEnabledRef.current,
+      frameCount: viewportFrames.length,
+      selectedPersonaId: selectedPersona?.id,
+      hasViewportImage: Boolean(replayStartFrame?.imageUrl),
+    })) {
+      setLiveVoiceLine(`Preparing ${selectedPersona?.displayName ?? "the selected persona"}'s screen narration...`);
+    }
   }, [
     activeViewportFrameIndex,
     handleLiveVoiceToggle,
+    liveViewport,
     replayPlaying,
+    selectedPersona?.id,
+    selectedPersona?.displayName,
     stopLiveVoicePlayback,
-    viewportFrames.length,
+    viewportFrames,
   ]);
   const completedWithFindings = snapshot.sessions.filter(
     (session) => session.finding,
@@ -626,6 +809,150 @@ export default function Home() {
   }, [replayPlaying, viewportFrames.length]);
 
   useEffect(() => {
+    if (!selectedPersona) return;
+
+    const framesToNarrate = getPostRunScreenNarrationFrames({
+      runComplete,
+      frames: viewportFrames,
+      selectedPersonaId: selectedPersona.id,
+      processedFrameIds: postRunNarratedFrameIds.current,
+    });
+    if (framesToNarrate.length === 0) return;
+
+    let cancelled = false;
+    setStatusLine(
+      `Preparing ${framesToNarrate.length} frame-by-frame replay narration${framesToNarrate.length === 1 ? "" : "s"} for ${selectedPersona.displayName}.`,
+    );
+    if (liveVoiceEnabledRef.current) {
+      setLiveVoiceLine(`Preparing synchronized replay narration for ${selectedPersona.displayName}...`);
+    }
+
+    void (async () => {
+      let completed = 0;
+      const generatedEvents: AgentRuntimeEvent[] = [];
+      for (const [index, frame] of framesToNarrate.entries()) {
+        if (cancelled || !frame.imageUrl) break;
+        postRunNarratedFrameIds.current.add(frame.id);
+        const narrationId = `screen-narration:${frame.id}`;
+
+        try {
+          const response = await fetch("/api/screen-narration", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              imageUrl: frame.imageUrl,
+              personaName: selectedPersona.displayName,
+              personaDescription: `${selectedPersona.tagline}. ${selectedPersona.context}. ${selectedPersona.behaviors.join(" ")}`,
+              objective: snapshot.objective ?? objective,
+              currentUrl: frame.currentUrl ?? snapshot.url,
+            }),
+          });
+          const payload = (await response.json()) as ScreenNarrationPayload;
+          if (!response.ok || !payload.data?.text) {
+            throw new Error(payload.error?.message ?? "Screen narration failed.");
+          }
+          if (cancelled) break;
+
+          const hasVisionPoint =
+            typeof payload.data.x === "number" && typeof payload.data.y === "number";
+          const fallbackPoint = getPostRunAttentionFallback({
+            events: liveEvents,
+            personaId: selectedPersona.id,
+            frameCursor: frame.cursor,
+            frameIndex: index,
+            frameCount: framesToNarrate.length,
+          });
+          const narrationEvent: AgentRuntimeEvent = {
+            id: narrationId,
+            sessionId: frame.sessionId ?? selectedSession?.sessionId ?? frame.id,
+            personaId: selectedPersona.id,
+            cursor: frame.cursor,
+            step: frame.step ?? frame.cursor,
+            createdAt: new Date().toISOString(),
+            type: "narration",
+            text: payload.data.text,
+            emotion: "observing",
+            x: hasVisionPoint ? payload.data.x : fallbackPoint.x,
+            y: hasVisionPoint ? payload.data.y : fallbackPoint.y,
+            ...(hasVisionPoint
+              ? { coordinateSource: "vision" as const }
+              : fallbackPoint.coordinateSource
+                ? { coordinateSource: fallbackPoint.coordinateSource }
+                : {}),
+          };
+
+          generatedEvents.push(narrationEvent);
+          completed += 1;
+          if (liveVoiceEnabledRef.current) {
+            void synthesizeVoiceItem({
+              eventId: narrationId,
+              personaId: selectedPersona.id,
+              voiceSlot: selectedPersona.voiceSlot,
+              text: payload.data.text,
+            });
+          }
+        } catch {
+          if (!cancelled) {
+            const fallbackText = `${selectedPersona.displayName} is inspecting the visible screen before the next action.`;
+            const fallbackPoint = getPostRunAttentionFallback({
+              events: liveEvents,
+              personaId: selectedPersona.id,
+              frameCursor: frame.cursor,
+              frameIndex: index,
+              frameCount: framesToNarrate.length,
+            });
+            generatedEvents.push({
+              id: narrationId,
+              sessionId: frame.sessionId ?? selectedSession?.sessionId ?? frame.id,
+              personaId: selectedPersona.id,
+              cursor: frame.cursor,
+              step: frame.step ?? frame.cursor,
+              createdAt: new Date().toISOString(),
+              type: "narration",
+              text: fallbackText,
+              emotion: "observing",
+              x: fallbackPoint.x,
+              y: fallbackPoint.y,
+              ...(fallbackPoint.coordinateSource
+                ? { coordinateSource: fallbackPoint.coordinateSource }
+                : {}),
+            });
+            completed += 1;
+          }
+        }
+      }
+
+      if (!cancelled && generatedEvents.length > 0) {
+        setLiveEvents((current) =>
+          mergeAgentRuntimeEvents(current, generatedEvents),
+        );
+      }
+      if (!cancelled && completed > 0) {
+        setStatusLine(
+          `Replay narration and heatmap evidence is ready for ${selectedPersona.displayName}.`,
+        );
+        if (liveVoiceEnabledRef.current) {
+          setLiveVoiceLine(`Replay narration is ready for ${selectedPersona.displayName}.`);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    objective,
+    runComplete,
+    selectedPersona,
+    selectedSession?.sessionId,
+    snapshot.objective,
+    snapshot.url,
+    synthesizeVoiceItem,
+    liveEvents,
+    viewportFrames,
+  ]);
+
+  useEffect(() => {
     if (
       !replayPlaying ||
       !liveVoiceEnabledRef.current ||
@@ -661,7 +988,7 @@ export default function Home() {
           }
         })
         .catch(() => {
-          setLiveVoiceLine("Replay narration failed. Continuing visual replay...");
+          setLiveVoiceLine("Replay fallback narration failed. Continuing visual replay...");
         });
     }
   }, [
@@ -673,120 +1000,6 @@ export default function Home() {
     selectedPersona,
     synthesizeVoiceItem,
     viewportFrames,
-  ]);
-
-  useEffect(() => {
-    if (
-      snapshot.sessions.length === 0 ||
-      !liveVoiceEnabled ||
-      !selectedPersona ||
-      !liveViewport?.imageUrl
-    ) {
-      return;
-    }
-
-    const eventsAtCurrentFrame = liveEvents.filter(
-      (event) =>
-        event.id === liveViewport.id ||
-        (event.personaId === selectedPersona.id &&
-          event.type === "narration" &&
-          event.cursor === liveViewport.cursor),
-    );
-    const candidate = getScreenNarrationCandidate({
-      enabled: liveVoiceEnabledRef.current,
-      events: eventsAtCurrentFrame,
-      selectedPersonaId: selectedPersona.id,
-      processedEventIds: screenNarratedEventIds.current,
-    });
-    if (!candidate?.imageUrl) return;
-    const existingFrameNarration = eventsAtCurrentFrame.find(
-      (event) =>
-        event.personaId === selectedPersona.id &&
-        event.type === "narration" &&
-        event.cursor === candidate.cursor &&
-        Boolean(event.text?.trim()),
-    );
-
-    const now = Date.now();
-    if (now - lastScreenNarrationAt.current < 6_000) return;
-    lastScreenNarrationAt.current = now;
-    screenNarratedEventIds.current.add(candidate.id);
-    const narrationId = `screen-narration:${candidate.id}`;
-    let cancelled = false;
-
-    setLiveVoiceLine(`Reading what ${selectedPersona.displayName} sees...`);
-    void fetch("/api/screen-narration", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        imageUrl: candidate.imageUrl,
-        personaName: selectedPersona.displayName,
-        personaDescription: `${selectedPersona.tagline}. ${selectedPersona.context}. ${selectedPersona.behaviors.join(" ")}`,
-        objective: snapshot.objective ?? objective,
-        currentUrl: candidate.currentUrl ?? snapshot.url,
-      }),
-    })
-      .then(async (response) => {
-        const payload = (await response.json()) as ScreenNarrationPayload;
-        if (!response.ok || !payload.data?.text || cancelled) return null;
-        const narrationText = existingFrameNarration?.text ?? payload.data.text;
-        const narrationEvent: AgentRuntimeEvent = {
-          id: narrationId,
-          sessionId: candidate.sessionId ?? selectedSession?.sessionId ?? candidate.id,
-          personaId: selectedPersona.id,
-          cursor: candidate.cursor,
-          step: candidate.step ?? candidate.cursor,
-          createdAt: new Date().toISOString(),
-          type: "narration",
-          text: narrationText,
-          emotion: "observing",
-          ...(typeof payload.data.x === "number" && typeof payload.data.y === "number"
-            ? {
-                x: payload.data.x,
-                y: payload.data.y,
-                coordinateSource: "vision" as const,
-              }
-            : {}),
-        };
-        const voiceItem = existingFrameNarration
-          ? null
-          : await synthesizeVoiceItem({
-              eventId: narrationId,
-              personaId: selectedPersona.id,
-              voiceSlot: selectedPersona.voiceSlot,
-              text: narrationText,
-            });
-        return { narrationEvent, voiceItem };
-      })
-      .then((result) => {
-        if (result && !cancelled && liveVoiceEnabledRef.current) {
-          setLiveEvents((current) =>
-            mergeAgentRuntimeEvents(current, [result.narrationEvent]),
-          );
-          if (result.voiceItem) queueLiveVoiceItem(result.voiceItem);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLiveVoiceLine("Could not narrate this frame. Watching for the next one...");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    liveEvents,
-    liveVoiceEnabled,
-    liveViewport,
-    objective,
-    queueLiveVoiceItem,
-    selectedPersona,
-    selectedSession?.sessionId,
-    snapshot.objective,
-    snapshot.sessions.length,
-    snapshot.url,
-    synthesizeVoiceItem,
   ]);
 
   useEffect(() => {
@@ -831,7 +1044,24 @@ export default function Home() {
       window.localStorage.getItem(PERSISTED_LAB_STATE_KEY),
     );
 
-    if (saved && shouldRestorePersistedRun(saved, queryState)) {
+    if (queryState.realRun) {
+      autoPlanFromUrl.current = true;
+      setSnapshot(createInitialRun());
+      setTargetUrl(queryState.targetUrl ?? DEFAULT_TARGET_URL);
+      setObjective(queryState.objective ?? DEFAULT_OBJECTIVE);
+      setSelectedPresetId(null);
+      setTesterCount(queryState.testerCount ?? DEFAULT_TESTER_COUNT);
+      setAuthorized(true);
+      setPersonasAccepted(false);
+      setLocalizedHotspots(null);
+      setLiveEvents([]);
+      setReplayFrameIndex(null);
+      setReplayPlaying(false);
+      setStatusLine("Preparing a real run from the URL. H agents will start only after Dispatch.");
+      setPersistenceLine("Loaded real-run configuration from the URL.");
+      setHasRestoredSavedRun(false);
+    } else if (saved && shouldRestorePersistedRun(saved, queryState)) {
+      autoPlanFromUrl.current = false;
       setSnapshot(saved.snapshot);
       setTargetUrl(saved.targetUrl);
       setObjective(saved.objective);
@@ -843,17 +1073,40 @@ export default function Home() {
       setPersistenceLine(`Restored saved run from ${new Date(saved.savedAt).toLocaleTimeString()}.`);
       setHasRestoredSavedRun(true);
     } else if (hasQueryState) {
+      autoPlanFromUrl.current = false;
       setPersonasAccepted(false);
       if (queryState.targetUrl) setTargetUrl(queryState.targetUrl);
       if (queryState.objective) setObjective(queryState.objective);
       if (queryState.testerCount) setTesterCount(queryState.testerCount);
       setPersistenceLine("Loaded test configuration from the URL.");
     } else {
+      autoPlanFromUrl.current = false;
       setPersistenceLine("Autosave ready.");
     }
 
     setPersistenceHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (
+      !persistenceHydrated ||
+      !autoPlanFromUrl.current ||
+      loading ||
+      snapshot.analysis ||
+      snapshot.sessions.length > 0
+    ) {
+      return;
+    }
+
+    autoPlanFromUrl.current = false;
+    void generatePlan("Generating a real persona plan from the share link.");
+  }, [
+    generatePlan,
+    loading,
+    persistenceHydrated,
+    snapshot.analysis,
+    snapshot.sessions.length,
+  ]);
 
   useEffect(() => {
     if (!persistenceHydrated) return;
@@ -869,6 +1122,9 @@ export default function Home() {
         activeCalibration?.id ??
         new URLSearchParams(window.location.search).get("calibration");
       if (calibrationId) params.set("calibration", calibrationId);
+      const currentParams = new URLSearchParams(window.location.search);
+      if (currentParams.get("run") === "1") params.set("run", "1");
+      if (currentParams.get("live") === "1") params.set("live", "1");
       const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
       const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
       if (nextUrl !== currentUrl) {
@@ -931,7 +1187,7 @@ export default function Home() {
   useEffect(() => {
     if (!liveVoiceEnabledRef.current) return;
     stopLiveVoicePlayback(
-      `Listening for ${selectedPersona?.displayName ?? "the selected persona"}'s next thought...`,
+      `Watching ${selectedPersona?.displayName ?? "the selected persona"}'s screen...`,
     );
   }, [
     selectedPersona?.displayName,
@@ -1061,10 +1317,10 @@ export default function Home() {
             if (voiceItem) {
               queueLiveVoiceItem(voiceItem);
             } else {
-              setLiveVoiceLine("Gradium did not return audio. Listening for the next thought...");
+              setLiveVoiceLine("Gradium did not return audio. Watching for the next screen action...");
             }
           } catch {
-            setLiveVoiceLine("Live voice request failed. Listening for the next thought...");
+            setLiveVoiceLine("Live voice request failed. Watching for the next screen action...");
           }
         }
 
@@ -1285,58 +1541,7 @@ export default function Home() {
 
   async function handlePlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setStatusLine("Generating the persona test plan before dispatch.");
-
-    try {
-      const response = await fetch("/api/generate-test-plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: targetUrl,
-          objective,
-          authorizationConfirmed: authorized,
-        }),
-      });
-      const payload = (await response.json()) as TestPlanPayload;
-
-      if (!response.ok || !payload.data?.analysis) {
-        throw new Error(payload.error?.message ?? "Could not generate a persona plan.");
-      }
-
-      const now = new Date().toISOString();
-      const plannedAnalysis = activeCalibration
-        ? mergeCalibratedPersona(
-            payload.data.analysis,
-            createCalibratedPersona(activeCalibration),
-          )
-        : payload.data.analysis;
-      setSnapshot((current) => ({
-        ...current,
-        id: `plan-${Date.now()}`,
-        phase: "revealing",
-        url: targetUrl,
-        objective,
-        analysis: plannedAnalysis,
-        sessions: [],
-        selectedPersonaId: activeCalibration
-          ? `calibrated-${activeCalibration.id}`
-          : plannedAnalysis.personas[0]?.id ?? null,
-        report: null,
-        error: null,
-        createdAt: now,
-        updatedAt: now,
-      }));
-      setPersonasAccepted(false);
-      setLocalizedHotspots(null);
-      setStatusLine(
-        `Generated ${plannedAnalysis.personas.length} personas${activeCalibration ? ", including the approved behavioral proxy," : ""} with ${payload.meta?.mode ?? "planner"}${payload.meta?.model ? ` (${payload.meta.model})` : ""}. Review them, then dispatch.`,
-      );
-    } catch (error) {
-      setStatusLine(error instanceof Error ? error.message : "Could not generate a persona plan.");
-    } finally {
-      setLoading(false);
-    }
+    await generatePlan();
   }
 
   async function handleLaunch() {
@@ -1373,13 +1578,14 @@ export default function Home() {
     liveEventCursors.current.clear();
     spokenLiveEventIds.current.clear();
     screenNarratedEventIds.current.clear();
+    postRunNarratedFrameIds.current.clear();
     lastScreenNarrationAt.current = 0;
     replaySpokenEventIds.current.clear();
     liveVoiceAudioCacheRef.current.clear();
     stopLiveVoicePlayback(
       liveVoiceEnabledRef.current
-        ? `Listening for ${personasToLaunch[0]?.displayName ?? "the selected persona"}'s first thought...`
-        : "Enable live voice to hear new agent thoughts.",
+        ? `Watching ${personasToLaunch[0]?.displayName ?? "the selected persona"}'s screen...`
+        : "Enable live voice to hear screen action narration.",
     );
     setLiveEvents([]);
     setSnapshot((current) => ({
@@ -1424,7 +1630,7 @@ export default function Home() {
         );
       } else {
         setStatusLine(
-          `Replay fallback loaded for ${payload.data.analysis?.productName ?? "target product"}${payload.meta?.reason ? `: ${payload.meta.reason}` : "."}`,
+          `Run started for ${payload.data.analysis?.productName ?? "target product"}.`,
         );
       }
     } catch (error) {
@@ -1488,12 +1694,13 @@ export default function Home() {
     liveEventCursors.current.clear();
     spokenLiveEventIds.current.clear();
     screenNarratedEventIds.current.clear();
+    postRunNarratedFrameIds.current.clear();
     lastScreenNarrationAt.current = 0;
     replaySpokenEventIds.current.clear();
     liveVoiceAudioCacheRef.current.clear();
     liveVoiceEnabledRef.current = false;
     setLiveVoiceEnabled(false);
-    stopLiveVoicePlayback("Enable live voice to hear new agent thoughts.");
+    stopLiveVoicePlayback("Enable live voice to hear screen action narration.");
     setSnapshot(createInitialRun());
     setTargetUrl("");
     setObjective(DEFAULT_OBJECTIVE);
@@ -1517,11 +1724,64 @@ export default function Home() {
 
   async function handleVoice() {
     if (!selectedPersona || voiceLoading) return;
+    if (liveViewport?.imageUrl) {
+      await playScreenNarrationVoice(liveViewport);
+      return;
+    }
     await playPersonaVoice(
       selectedPersona.id,
       selectedPersona.voiceSlot,
       selectedNarration,
     );
+  }
+
+  async function playScreenNarrationVoice(frame: ScreenNarrationEvent) {
+    if (!selectedPersona || voiceLoading || !frame.imageUrl) return;
+
+    setVoiceLoading(true);
+    setVoiceLine("Preparing screen action narration...");
+
+    try {
+      const response = await fetch("/api/screen-narration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: frame.imageUrl,
+          personaName: selectedPersona.displayName,
+          personaDescription: `${selectedPersona.tagline}. ${selectedPersona.context}. ${selectedPersona.behaviors.join(" ")}`,
+          objective: snapshot.objective ?? objective,
+          currentUrl: frame.currentUrl ?? snapshot.url,
+        }),
+      });
+      const payload = (await response.json()) as ScreenNarrationPayload;
+      if (!response.ok || !payload.data?.text) {
+        throw new Error(payload.error?.message ?? "Screen narration failed.");
+      }
+
+      const voiceItem = await synthesizeVoiceItem({
+        eventId: `manual-screen-narration:${frame.id}:${Date.now()}`,
+        personaId: selectedPersona.id,
+        voiceSlot: selectedPersona.voiceSlot,
+        text: payload.data.text,
+      });
+      if (!voiceItem) throw new Error("Voice generation failed.");
+
+      if (voiceItem.audioSrc) {
+        await new Audio(voiceItem.audioSrc).play();
+        setVoiceLine("Screen action narration played.");
+      } else {
+        speakWithBrowser(voiceItem.transcript);
+        setVoiceLine("Browser voice narrated the screen action.");
+      }
+    } catch (error) {
+      setVoiceLine(
+        error instanceof Error
+          ? `${error.message} Try enabling live voice and replaying.`
+          : "Could not narrate this screen.",
+      );
+    } finally {
+      setVoiceLoading(false);
+    }
   }
 
   async function playPersonaVoice(
@@ -1564,7 +1824,7 @@ export default function Home() {
         );
       } else {
         speakWithBrowser(payload.data.transcript);
-        setVoiceLine("Gradium fallback: browser voice spoke the finding.");
+        setVoiceLine("Gradium fallback: browser voice spoke the selected line.");
       }
     } catch (error) {
       speakWithBrowser(text);
@@ -2258,7 +2518,7 @@ export default function Home() {
               type="button"
             >
               <Volume2 size={17} />
-              {voiceLoading ? "Voicing..." : "Speak Finding"}
+              {voiceLoading ? "Voicing..." : liveViewport?.imageUrl ? "Narrate Screen" : "Speak Finding"}
             </button>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/45">
               {voiceLine}
@@ -2650,7 +2910,7 @@ export default function Home() {
               <div className="live-provider-controls">
                 <div className="provider-badges">
                   <span><i className={runComplete ? "done" : "connected"} />H Company · {dispatching ? "connecting" : replayMode ? "replay" : runComplete ? "complete" : "status connected"}</span>
-                  <span>Gradium · {hasLiveNarration ? "live event voice" : "persona/finding voice"}</span>
+                  <span>Gradium · {liveViewport?.imageUrl ? "screen action voice" : hasLiveNarration ? "live event voice" : "finding voice"}</span>
                   <button
                     aria-pressed={liveVoiceEnabled}
                     className="live-voice-toggle"
@@ -2730,9 +2990,9 @@ export default function Home() {
                           ? "No H viewport frames received"
                           : "Waiting for H viewport"}
                   </span>
-                  {selectedHotspots.length + replayAttentionHotspots.length > 0 ? (
+                  {selectedHotspots.length > 0 ? (
                     <span className="live-heatmap-status">
-                      <Activity size={11} /> {replayFrameIndex !== null ? "Replay attention" : liveMode ? "Live heatmap" : "Evidence heatmap"} · {selectedHotspots.length + replayAttentionHotspots.length} signal{selectedHotspots.length + replayAttentionHotspots.length === 1 ? "" : "s"}
+                      <Activity size={11} /> {replayFrameIndex !== null ? "Frame attention" : liveMode ? "Live heatmap" : "Evidence heatmap"} · {selectedHotspots.length} signal{selectedHotspots.length === 1 ? "" : "s"}
                     </span>
                   ) : null}
                   {liveViewport?.imageUrl ? (
@@ -2755,15 +3015,13 @@ export default function Home() {
                       </div>
                     </>
                   ) : null}
-                  {liveViewportPresentation.showHotspotOverlay || replayAttentionHotspots.length > 0 ? (
+                  {liveViewportPresentation.showHotspotOverlay ? (
                     <div className="agent-viewport-coordinate-space is-heatmap">
-                      {liveViewportPresentation.showHotspotOverlay ? (
-                        <HotspotLayer
-                          hotspots={selectedHotspots}
-                          onSelect={handleHotspotSelect}
-                        />
-                      ) : null}
-                      <HeatmapDensityLayer hotspots={replayAttentionHotspots} />
+                      <HotspotLayer
+                        hotspots={selectedHotspots}
+                        onSelect={handleHotspotSelect}
+                      />
+                      <HeatmapDensityLayer hotspots={replayFrameIndex !== null ? selectedHotspots : []} />
                     </div>
                   ) : null}
                   {agentCursorPoint ? (
@@ -2791,10 +3049,10 @@ export default function Home() {
                     </div>
                   ) : null}
                   <div className="thought-annotation">
-                    <span><Volume2 size={12} /> {hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
+                    <span><Volume2 size={12} /> {liveViewport?.imageUrl ? "Screen action narration" : hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
                     <blockquote>“{selectedNarration}”</blockquote>
-                    <button disabled={voiceLoading || !selectedPersona || liveVoiceEnabled} onClick={handleVoice} type="button">
-                      {liveVoiceEnabled ? "Live voice on" : voiceLoading ? "Preparing…" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
+                    <button disabled={voiceLoading || !selectedPersona} onClick={handleVoice} type="button">
+                      {voiceLoading ? "Preparing..." : liveViewport?.imageUrl ? "Narrate this screen" : hasLiveNarration ? "Hear live reaction" : runComplete ? "Hear finding" : "Hear persona preview"}
                     </button>
                   </div>
                   {selectedFriction ? (

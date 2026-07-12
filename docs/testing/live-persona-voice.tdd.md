@@ -38,3 +38,50 @@ This iteration uses Gradium's existing REST TTS response and a browser audio que
 - Behavior: explicit H narration wins. Otherwise, the newest selected-persona frame is vision-analyzed at most once every six seconds and converted into a short first-person thought.
 - Runtime proof: the local `/api/screen-narration` endpoint returned `source: openai` and a spoken observation from an image request.
 - Verification: 30 files and 108 tests pass; ESLint and TypeScript pass. Focused narration coverage is 97.05% statements, 94% branches, 100% functions, and 96.55% lines.
+
+## Completed-run silence regression
+
+- Reported behavior: the UI displayed `Live voice on` for a completed H session but produced no audible speech.
+- Root cause 1: Gradium's safe text fallback had no audio URL, and `synthesizeVoiceItem` discarded the transcript instead of queuing browser speech.
+- Root cause 2: enabling voice after completion waited for a future event instead of speaking the finding already visible on screen.
+- RED checkpoint: `e3ea502 test: reproduce silent completed-run voice` failed both text-fallback and completed-run activation guarantees.
+- GREEN checkpoint: `1859d1f fix: play live voice without provider audio` preserves text-only queue items, plays them with `speechSynthesis`, speaks the current finding on activation, cancels browser speech when voice is stopped, and exposes `Speak this finding again`.
+- Verification: `pnpm test` passes 42 files / 143 tests; `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
+
+### Replay-start follow-up
+
+- The second screenshot showed replay advancing at frame 2/46 while the status remained `Preparing synchronized replay narration...`; this proved no queue item was created at replay start.
+- RED checkpoint: `bd5fe30 test: reproduce silent replay startup` requires the visible persona line to prime replay before frame narration arrives.
+- GREEN checkpoint: `1d25127 fix: prime replay narration immediately` clears stale frame markers, queues an immediate browser-spoken primer, identifies `Browser speaking` versus `Gradium speaking` in the status, and converts provider/network failures into text speech.
+- Verification: 42 files / 144 tests pass; focused voice coverage is 100% lines/functions and above 92% statements/branches; typecheck, lint, build, and audit pass.
+
+### Screen-action narration correction
+
+- Reported behavior: the overlay voice was reading the persona/finding quote, but the intended demo is a screen commentator describing what the agent is doing on the page.
+- RED checkpoint: `dfda9f5 test: reproduce action narration replay voice` fails when replay priming depends on persona text, when an existing H thought blocks screen narration, and when the vision prompt still asks for first-person thoughts.
+- GREEN checkpoint: `794e0da fix: narrate replay screen actions` makes screenshot-backed replay prefer `/api/screen-narration`, stops H thought narration when a viewport frame exists, keeps screen narration active even when H already provided a thought, updates the vision prompt to third-person visible action commentary, and changes the manual button to narrate the current screen.
+- Verification: `pnpm vitest run src/lib/audio/live-voice-queue.test.ts src/lib/audio/screen-narration.test.ts` passes 18 tests; `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
+- Coverage: focused audio coverage is 94.23% statements, 89.47% branches, 100% functions, and 97.67% lines.
+
+### Frame-synced replay heatmap correction
+
+- Reported behavior: the replay heatmap stayed fixed while the browser frame changed, and the narration/card felt detached from the current UI.
+- RED checkpoint: `241a7fd test: reproduce static replay heatmap` requires replay attention to use only the active frame window instead of every signal up to the current cursor.
+- GREEN checkpoint: `5e4e7bd fix: sync replay heatmap to frame` hides final summary hotspots during replay, renders only frame-window attention/friction signals, scopes the narration and frustration card to the active frame, and shortens replay screen-narration cooldown from 6 seconds to 2.5 seconds.
+- Verification: `pnpm vitest run src/lib/hotspots/build-replay-attention.test.ts` passes 6 tests; `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
+- Coverage: focused replay-attention coverage is 100% statements, branches, functions, and lines.
+### Real-run share URL
+
+- Reported behavior: the shared URL with `url`, `objective`, and `testers` opened setup only, which made it look like heatmap and voice were missing before the platform had actually run.
+- RED checkpoint: `318ba6e test: reproduce real run share link` requires explicit real-run parsing and prevents stale autosave from overriding a fresh run URL.
+- GREEN checkpoint: `b90c613 fix: require real runs for share links` removes fixture-backed share loading, keeps only `run=1` / `live=1` for real-run preparation, generates the real persona plan from the URL, and keeps H dispatch behind an explicit presenter click.
+- Dispatch contract: `/api/run-h-agents` no longer substitutes `createDemoRun()` when H is unavailable or launch fails; it returns a clear error instead.
+- Browser proof: `http://localhost:3000/?url=https%3A%2F%2Fgettrustloop.app%2F&objective=Find+the+primary+user+workflow+and+stop+before+an+irreversible+action.&testers=3&run=1` opens to `Who should try it?`, `Ready to dispatch`, generated target-specific personas, and no completed replay evidence.
+
+### Frame-by-frame replay sync
+
+- Reported behavior: pressing Play advanced screenshots, but the heatmap and audio did not change frame by frame.
+- RED checkpoint: `89d9338 test: reproduce replay summary hotspot drift` requires final finding hotspots to be filtered by the active replay step window.
+- GREEN checkpoint: `ea0c39c fix: sync replay audio and heatmap by frame` adds step metadata to hotspots, combines current-frame runtime attention with current-frame finding hotspots, and queues one immediate browser-spoken replay line per frame id while Play is running.
+- Verification: `pnpm vitest run src/lib/hotspots/build-replay-attention.test.ts src/lib/audio/live-voice-queue.test.ts` passes 22 tests; `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
+- Coverage: focused replay/audio helper coverage is 95.45% statements, 95.12% branches, 100% functions, and 100% lines.

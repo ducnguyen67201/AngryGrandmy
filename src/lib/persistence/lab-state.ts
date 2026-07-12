@@ -28,6 +28,7 @@ export type LabSearchState = {
   targetUrl?: string;
   objective?: string;
   testerCount?: TesterCount;
+  realRun?: boolean;
 };
 
 const HttpUrlSchema = z.string().url().refine((value) => {
@@ -45,11 +46,15 @@ export function parseLabSearchParams(search: string): LabSearchState {
     .max(500)
     .safeParse(params.get("objective"));
   const requestedCount = Number(params.get("testers"));
+  const realRun =
+    params.get("run") === "1" ||
+    params.get("live") === "1";
 
   return {
     ...(targetUrl.success ? { targetUrl: targetUrl.data } : {}),
     ...(objective.success ? { objective: objective.data } : {}),
     ...(isTesterCount(requestedCount) ? { testerCount: requestedCount } : {}),
+    ...(realRun ? { realRun } : {}),
   };
 }
 
@@ -74,6 +79,7 @@ export function shouldRestorePersistedRun(
   persisted: PersistedLabState,
   query: LabSearchState,
 ): boolean {
+  if (query.realRun) return false;
   if (
     query.targetUrl &&
     new URL(query.targetUrl).href !== new URL(persisted.targetUrl).href

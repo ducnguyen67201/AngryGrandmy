@@ -1,8 +1,50 @@
 export type LiveVoiceQueueItem = {
   eventId: string;
-  audioSrc: string;
+  audioSrc: string | null;
   transcript: string;
 };
+
+export function createLiveVoiceQueueItem(input: LiveVoiceQueueItem) {
+  const transcript = input.transcript.trim();
+  if (!transcript) return null;
+  return {
+    eventId: input.eventId,
+    audioSrc: input.audioSrc || null,
+    transcript,
+  } satisfies LiveVoiceQueueItem;
+}
+
+export function getLiveVoicePlaybackMode(item: LiveVoiceQueueItem) {
+  return item.audioSrc ? "provider-audio" as const : "browser-speech" as const;
+}
+
+export function shouldSpeakCurrentNarrationOnEnable({
+  runComplete,
+  selectedPersonaId,
+  narration,
+}: {
+  runComplete: boolean;
+  selectedPersonaId: string | null | undefined;
+  narration: string | null | undefined;
+}) {
+  return Boolean(runComplete && selectedPersonaId && narration?.trim());
+}
+
+export function shouldPrimeReplayNarration({
+  enabled,
+  frameCount,
+  selectedPersonaId,
+  hasViewportImage,
+}: {
+  enabled: boolean;
+  frameCount: number;
+  selectedPersonaId: string | null | undefined;
+  hasViewportImage: boolean;
+}) {
+  return Boolean(
+    enabled && frameCount > 0 && selectedPersonaId && hasViewportImage,
+  );
+}
 
 export function enqueueLiveVoiceItem(
   queue: readonly LiveVoiceQueueItem[],
@@ -82,24 +124,29 @@ export function getScreenNarrationCandidate({
       Boolean(event.imageUrl) &&
       !processedEventIds.has(event.id),
   ) ?? null;
-  if (!candidate) return null;
-
-  if (events.some(
-    (event) =>
-      event.personaId === selectedPersonaId &&
-      event.type === "narration" &&
-      event.cursor === candidate.cursor &&
-      Boolean(event.text?.trim()) &&
-      validPercent(event.x) &&
-      validPercent(event.y),
-  )) {
-    return null;
-  }
   return candidate;
 }
 
-function validPercent(value: number | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+export function getPostRunScreenNarrationFrames({
+  runComplete,
+  frames,
+  selectedPersonaId,
+  processedFrameIds,
+}: {
+  runComplete: boolean;
+  frames: readonly ScreenNarrationEvent[];
+  selectedPersonaId: string | null | undefined;
+  processedFrameIds: ReadonlySet<string>;
+}): ScreenNarrationEvent[] {
+  if (!runComplete || !selectedPersonaId) return [];
+
+  return frames.filter(
+    (frame) =>
+      frame.personaId === selectedPersonaId &&
+      frame.type === "viewport" &&
+      Boolean(frame.imageUrl) &&
+      !processedFrameIds.has(frame.id),
+  );
 }
 
 export function getReplayNarrationsForFrame({

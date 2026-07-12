@@ -4,14 +4,16 @@ import type { AgentRuntimeEvent } from "@/lib/runtime/agent-events";
 export function buildReplayAttentionHotspots(
   events: readonly AgentRuntimeEvent[],
   personaId: string | undefined,
-  frameCursor: number,
+  previousCursor: number | null,
+  currentCursor: number,
 ): VisualHotspot[] {
   if (!personaId) return [];
 
   return events.flatMap((event) => {
     if (
       event.personaId !== personaId ||
-      event.cursor > frameCursor ||
+      event.cursor > currentCursor ||
+      (previousCursor !== null && event.cursor <= previousCursor) ||
       !validPercent(event.x) ||
       !validPercent(event.y) ||
       (event.type !== "narration" && event.type !== "frustration")
@@ -33,7 +35,26 @@ export function buildReplayAttentionHotspots(
       label: event.type === "frustration" ? "frustration" : "attention",
       evidence: event.observation ?? event.text ?? "Observed this interface element.",
       recommendation: event.recommendation ?? "Review this high-attention interface area.",
+      step: event.step,
     }];
+  });
+}
+
+export function filterReplayHotspotsForFrame({
+  hotspots,
+  previousStep,
+  currentStep,
+}: {
+  hotspots: readonly VisualHotspot[];
+  previousStep: number | null;
+  currentStep: number;
+}): VisualHotspot[] {
+  return hotspots.filter((hotspot) => {
+    if (typeof hotspot.step !== "number") return false;
+    return (
+      hotspot.step <= currentStep &&
+      (previousStep === null || hotspot.step > previousStep)
+    );
   });
 }
 

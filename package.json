@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:connected": "GRANNYSMITH_REPO_PATH=$PWD/demo GRANNYSMITH_FIX_AGENT_MODE=codex next dev -p 3000",
+    "dev:demo": "pnpm --dir demo dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

@@ -7,6 +7,12 @@ export type AgentCursorPoint = {
   source: "agent" | "vision" | "evidence";
 };
 
+export type PostRunAttentionFallback = {
+  x: number;
+  y: number;
+  coordinateSource?: "agent" | "vision";
+};
+
 export function buildDemoCursorFallback(
   frameIndex: number,
   frameCount: number,
@@ -80,6 +86,41 @@ export function getAgentCursorForFrame({
   }
 
   return null;
+}
+
+export function getPostRunAttentionFallback({
+  events,
+  personaId,
+  frameCursor,
+  frameIndex,
+  frameCount,
+}: {
+  events: readonly AgentRuntimeEvent[];
+  personaId: string;
+  frameCursor: number;
+  frameIndex: number;
+  frameCount: number;
+}): PostRunAttentionFallback {
+  const reported = getAgentCursorForFrame({
+    events,
+    personaId,
+    frameCursor,
+    fallback: null,
+  });
+
+  if (reported) {
+    return {
+      x: reported.x,
+      y: reported.y,
+      coordinateSource: reported.source === "vision" ? "vision" : "agent",
+    };
+  }
+
+  const estimated = buildAnimatedCursorFallback(frameIndex, frameCount, frameIndex);
+  return {
+    x: estimated.x,
+    y: estimated.y,
+  };
 }
 
 function validPercent(value: number | undefined): value is number {

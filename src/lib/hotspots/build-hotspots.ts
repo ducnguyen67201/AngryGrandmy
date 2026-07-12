@@ -15,6 +15,7 @@ export type VisualHotspot = {
   label: string;
   evidence: string;
   recommendation: string;
+  step?: number;
 };
 
 const CATEGORY_COORDINATES: Record<
@@ -81,6 +82,7 @@ export function buildVisualHotspots(
         label: event.category,
         evidence: event.visibleEvidence,
         recommendation: event.recommendation,
+        step: event.step,
       };
     }),
   );

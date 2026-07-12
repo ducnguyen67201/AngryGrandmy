@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
+  getLiveVoicePlaybackMode,
+  getPostRunScreenNarrationFrames,
   getScreenNarrationCandidate,
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
+  shouldSpeakCurrentNarrationOnEnable,
+  shouldPrimeReplayNarration,
   shouldEnableLiveVoiceForDispatch,
   type LiveVoiceQueueItem,
 } from "./live-voice-queue";
@@ -15,6 +20,55 @@ const item = (id: string): LiveVoiceQueueItem => ({
 });
 
 describe("live persona voice queue", () => {
+  it("keeps text-only provider responses as browser speech queue items", () => {
+    const fallback = createLiveVoiceQueueItem({
+      eventId: "finding-1",
+      audioSrc: null,
+      transcript: "I cannot tell what this button will do.",
+    });
+
+    expect(fallback).toEqual({
+      eventId: "finding-1",
+      audioSrc: null,
+      transcript: "I cannot tell what this button will do.",
+    });
+    expect(getLiveVoicePlaybackMode(fallback!)).toBe("browser-speech");
+  });
+
+  it("speaks the visible finding immediately when voice is enabled after completion", () => {
+    expect(shouldSpeakCurrentNarrationOnEnable({
+      runComplete: true,
+      selectedPersonaId: "arjun",
+      narration: "I want to understand the requirements before continuing.",
+    })).toBe(true);
+    expect(shouldSpeakCurrentNarrationOnEnable({
+      runComplete: false,
+      selectedPersonaId: "arjun",
+      narration: "Wait for the next live event.",
+    })).toBe(false);
+  });
+
+  it("primes replay from the visible screen frame instead of the persona quote", () => {
+    expect(shouldPrimeReplayNarration({
+      enabled: true,
+      frameCount: 46,
+      selectedPersonaId: "arjun",
+      hasViewportImage: true,
+    })).toBe(true);
+    expect(shouldPrimeReplayNarration({
+      enabled: true,
+      frameCount: 0,
+      selectedPersonaId: "arjun",
+      hasViewportImage: true,
+    })).toBe(false);
+    expect(shouldPrimeReplayNarration({
+      enabled: true,
+      frameCount: 46,
+      selectedPersonaId: "arjun",
+      hasViewportImage: false,
+    })).toBe(false);
+  });
+
   it("keeps only the newest pending reactions when narration falls behind", () => {
     const queue = [item("one"), item("two")];
 
@@ -98,7 +152,7 @@ describe("live persona voice queue", () => {
     })?.id).toBe("frame-2");
   });
 
-  it("does not synthesize a frame fallback when H already supplied narration", () => {
+  it("still narrates the visible screen when H already supplied a thought", () => {
     expect(getScreenNarrationCandidate({
       enabled: true,
       events: [
@@ -107,7 +161,7 @@ describe("live persona voice queue", () => {
       ],
       selectedPersonaId: "linda",
       processedEventIds: new Set(),
-    })).toBeNull();
+    })?.id).toBe("frame");
   });
 
   it("uses vision to locate a same-frame narration that has no coordinates", () => {
@@ -156,5 +210,28 @@ describe("live persona voice queue", () => {
   it("unlocks live voice from the dispatch gesture unless it is already on", () => {
     expect(shouldEnableLiveVoiceForDispatch(false)).toBe(true);
     expect(shouldEnableLiveVoiceForDispatch(true)).toBe(false);
+  });
+
+  it("queues selected-persona frames for screen narration only after H finishes", () => {
+    const frames = [
+      { id: "frame-1", personaId: "arjun", type: "viewport", cursor: 1, imageUrl: "data:image/png;base64,one" },
+      { id: "frame-2", personaId: "arjun", type: "viewport", cursor: 2, imageUrl: "data:image/png;base64,two" },
+      { id: "casey-frame", personaId: "casey", type: "viewport", cursor: 3, imageUrl: "data:image/png;base64,three" },
+      { id: "thought", personaId: "arjun", type: "narration", cursor: 3, text: "Not a viewport frame." },
+    ];
+
+    expect(getPostRunScreenNarrationFrames({
+      runComplete: false,
+      frames,
+      selectedPersonaId: "arjun",
+      processedFrameIds: new Set(),
+    })).toEqual([]);
+
+    expect(getPostRunScreenNarrationFrames({
+      runComplete: true,
+      frames,
+      selectedPersonaId: "arjun",
+      processedFrameIds: new Set(["frame-1"]),
+    }).map(({ id }) => id)).toEqual(["frame-2"]);
   });
 });

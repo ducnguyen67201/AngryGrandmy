@@ -20,5 +20,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next-app/types/**/*.ts", ".next-marketing/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "demo"]
 }

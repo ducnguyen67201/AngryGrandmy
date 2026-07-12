@@ -35,17 +35,23 @@ test("moves through exclusive setup, persona, and replay scenes", async ({ page 
     (response) => response.url().includes("/api/run-h-agents") && response.request().method() === "POST",
   );
   await page.getByRole("button", { name: /dispatch 4 testers/i }).click();
-  const payload = (await (await dispatchResponse).json()) as { meta?: { mode?: string } };
+  const response = await dispatchResponse;
+  const payload = (await response.json()) as {
+    meta?: { mode?: string };
+    error?: { code?: string; message?: string };
+  };
 
-  expect(payload.meta?.mode).toBe("demo-replay");
+  if (!response.ok()) {
+    expect(payload.error?.code).toBe("h_company_not_configured");
+    await expect(page.getByText(/real h company runs require/i)).toBeVisible();
+    return;
+  }
+
+  expect(payload.meta?.mode).toBe("h-company");
   await expect(page.getByRole("heading", { name: /watching/i })).toBeVisible();
   await expect(page.getByLabel("Product URL")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /who should try it/i })).toHaveCount(0);
-  await expect(page.getByText("Evidence replay")).toBeVisible();
-  await expect(page.getByText(/live event voice/i)).toBeVisible();
-  await expect(page.getByText(/frustration · 5\/5/i)).toBeVisible();
-  await expect(page.getByText("Run complete").first()).toBeVisible();
-  await expect(page.getByText("View findings")).toBeVisible();
+  await expect(page.getByText(/h company · status connected/i)).toBeVisible();
 
   await page.screenshot({ path: "/tmp/grannysmith-run-flow.png", fullPage: true });
 });

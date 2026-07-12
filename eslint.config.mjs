@@ -17,6 +17,7 @@ const eslintConfig = [
       ".next/**",
       ".next-app/**",
       ".next-marketing/**",
+      "demo/**",
       "coverage/**",
       "out/**",
       "build/**",

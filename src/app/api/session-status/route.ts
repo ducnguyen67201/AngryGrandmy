@@ -20,12 +20,20 @@ export async function GET(req: NextRequest) {
     return fail("missing_session_id", "sessionId is required.", 400);
   }
 
-  if (!isHCompanyConfigured() || sessionId.startsWith("demo-")) {
+  if (sessionId.startsWith("demo-")) {
     const session = createDemoRun().sessions.find(
       (item) => item.sessionId === sessionId || item.personaId === personaId,
     );
-    if(eventsMode){const f=session?.finding?.frictionEvents[0],createdAt=session?.finishedAt??new Date().toISOString(),events=f?[{id:`${sessionId}:1`,sessionId,personaId,cursor:1,step:f.step,createdAt,type:"narration",text:f.narratedObservation,emotion:"frustrated"},{id:`${sessionId}:2`,sessionId,personaId,cursor:2,step:f.step,createdAt,type:"frustration",category:f.category,severity:f.severity,observation:f.observation,visibleEvidence:f.visibleEvidence,currentUrl:"https://demo-health.example",recommendation:f.recommendation}]:[];return ok(events.filter(e=>e.cursor>after),{mode:"demo-replay",cursor:events.at(-1)?.cursor??after})}
-    return ok(session ?? null, { mode: "demo-replay" });
+    if(eventsMode){const f=session?.finding?.frictionEvents[0],createdAt=session?.finishedAt??new Date().toISOString(),events=f?[{id:`${sessionId}:1`,sessionId,personaId,cursor:1,step:f.step,createdAt,type:"narration",text:f.narratedObservation,emotion:"frustrated"},{id:`${sessionId}:2`,sessionId,personaId,cursor:2,step:f.step,createdAt,type:"frustration",category:f.category,severity:f.severity,observation:f.observation,visibleEvidence:f.visibleEvidence,currentUrl:"https://demo-health.example",recommendation:f.recommendation}]:[];return ok(events.filter(e=>e.cursor>after),{mode:"legacy-demo-fixture",cursor:events.at(-1)?.cursor??after})}
+    return ok(session ?? null, { mode: "legacy-demo-fixture" });
+  }
+
+  if (!isHCompanyConfigured()) {
+    return fail(
+      "h_company_not_configured",
+      "Real H Company session polling requires HAI_API_KEY.",
+      503,
+    );
   }
 
   try {

@@ -5,11 +5,11 @@ import { createScreenNarration } from "./screen-narration";
 describe("createScreenNarration", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("asks OpenAI vision for one concise in-persona thought about the frame", async () => {
+  it("asks OpenAI vision for concise visible action commentary about the frame", async () => {
     vi.stubEnv("OPENAI_API_KEY", "test-key");
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       output_text: JSON.stringify({
-        text: "Oh, I see a lot of text, but I cannot tell what to press next.",
+        text: "Linda is scanning the dense copy and looking for the next clear button.",
         x: 46,
         y: 62,
       }),
@@ -26,7 +26,7 @@ describe("createScreenNarration", () => {
 
     expect(result).toEqual({
       source: "openai",
-      text: "Oh, I see a lot of text, but I cannot tell what to press next.",
+      text: "Linda is scanning the dense copy and looking for the next clear button.",
       x: 46,
       y: 62,
     });
@@ -36,6 +36,8 @@ describe("createScreenNarration", () => {
       image_url: "data:image/png;base64,frame",
     });
     expect(JSON.stringify(body)).toContain("older adult");
+    expect(JSON.stringify(body)).toContain("visible action");
+    expect(JSON.stringify(body)).toContain("Do not quote");
     expect(body.text.format.type).toBe("json_object");
   });
 
@@ -50,7 +52,7 @@ describe("createScreenNarration", () => {
       currentUrl: "https://shop.example/checkout",
     })).resolves.toEqual({
       source: "fallback",
-      text: "I’m looking at this page now, but I need a moment to understand what I should do next.",
+      text: "Linda is reviewing the current page and looking for the next action.",
     });
   });
 
