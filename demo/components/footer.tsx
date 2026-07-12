@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { BOOK_MEETING_URL, DOCS_URL, GITHUB_URL } from '@/lib/github';
 import { trackMarketingEvent } from '@/lib/gtm';
+import { reportSubscribeFrustration, submitWaitlist } from '@/lib/subscribe-client';
 import { MarketingEventLink } from './marketing-event-link';
 
 const LINK_GROUPS = [
@@ -57,13 +58,7 @@ export function Footer() {
     setError('');
 
     try {
-      const res = await fetch('/api/subscribe', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(Object.fromEntries(new FormData(form))),
-      });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(body.error ?? 'Could not subscribe. Try again in a minute.');
+      await submitWaitlist(Object.fromEntries(new FormData(form)));
 
       trackMarketingEvent('waitlist_submit', {
         page: window.location.pathname,
@@ -75,6 +70,9 @@ export function Footer() {
     } catch (err) {
       setStatus('error');
       setError(err instanceof Error ? err.message : 'Could not subscribe. Try again in a minute.');
+      reportSubscribeFrustration(
+        form.querySelector<HTMLElement>('button[type="submit"]') ?? form,
+      );
     }
   }
 
