@@ -22,4 +22,4 @@ As a demo viewer, I want the older-adult tester to appear beside her moving atte
 ## Asset
 
 
-`public/grandma-linda.png` was generated with the built-in image-generation tool as a respectful, warm editorial portrait designed to remain legible in a circular replay badge.
+`public/grandma-linda-2d.png` was generated with the built-in image-generation tool by restyling the original Linda portrait as a respectful, expressive 2D product mascot designed to remain legible in a circular replay badge.

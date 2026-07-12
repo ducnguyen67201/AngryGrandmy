@@ -3301,7 +3301,7 @@ export default function Home() {
                       <span>Waiting for agent</span>
                     </div>
                   ) : null}
-                  <div className="thought-annotation">
+                  <div className={`thought-annotation ${replayPersonaPresence.avatarSrc ? "has-persona" : ""}`}>
                     <span>
                       {replayPersonaPresence.avatarSrc ? (
                         <Image

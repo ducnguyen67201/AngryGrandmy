@@ -13,7 +13,7 @@ export function getReplayPersonaPresence(persona?: ReplayPersona | null) {
   );
 
   return {
-    avatarSrc: representsLinda ? "/grandma-linda.png" : null,
+    avatarSrc: representsLinda ? "/grandma-linda-2d.png" : null,
     cursorLabel: `${displayName} is looking here`,
     narrationLabel: `${displayName} is thinking aloud`,
   };
