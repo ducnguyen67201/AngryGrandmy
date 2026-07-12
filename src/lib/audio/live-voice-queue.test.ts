@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildReplayFrameNarration,
   createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
   getLiveVoicePlaybackMode,
+  getPostRunScreenNarrationFrames,
   getScreenNarrationCandidate,
   getReplayNarrationsForFrame,
   isLiveNarrationEligible,
@@ -212,21 +212,26 @@ describe("live persona voice queue", () => {
     expect(shouldEnableLiveVoiceForDispatch(true)).toBe(false);
   });
 
-  it("builds a frame-specific replay narration line", () => {
-    expect(buildReplayFrameNarration({
-      personaName: "Arjun",
-      frameNumber: 4,
-      evidence: "The pricing label is hard to compare.",
-      fallback: "Arjun is reading pricing.",
-    })).toBe("The pricing label is hard to compare.");
-    expect(buildReplayFrameNarration({
-      personaName: "Arjun",
-      frameNumber: 4,
-      fallback: "Arjun is reading pricing.",
-    })).toBe("Arjun is reading pricing.");
-    expect(buildReplayFrameNarration({
-      personaName: "Arjun",
-      frameNumber: 4,
-    })).toBe("Arjun is reviewing replay frame 4.");
+  it("queues selected-persona frames for screen narration only after H finishes", () => {
+    const frames = [
+      { id: "frame-1", personaId: "arjun", type: "viewport", cursor: 1, imageUrl: "data:image/png;base64,one" },
+      { id: "frame-2", personaId: "arjun", type: "viewport", cursor: 2, imageUrl: "data:image/png;base64,two" },
+      { id: "casey-frame", personaId: "casey", type: "viewport", cursor: 3, imageUrl: "data:image/png;base64,three" },
+      { id: "thought", personaId: "arjun", type: "narration", cursor: 3, text: "Not a viewport frame." },
+    ];
+
+    expect(getPostRunScreenNarrationFrames({
+      runComplete: false,
+      frames,
+      selectedPersonaId: "arjun",
+      processedFrameIds: new Set(),
+    })).toEqual([]);
+
+    expect(getPostRunScreenNarrationFrames({
+      runComplete: true,
+      frames,
+      selectedPersonaId: "arjun",
+      processedFrameIds: new Set(["frame-1"]),
+    }).map(({ id }) => id)).toEqual(["frame-2"]);
   });
 });
