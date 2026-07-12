@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildReplayFrameNarration,
   createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
   getLiveVoicePlaybackMode,
@@ -209,5 +210,23 @@ describe("live persona voice queue", () => {
   it("unlocks live voice from the dispatch gesture unless it is already on", () => {
     expect(shouldEnableLiveVoiceForDispatch(false)).toBe(true);
     expect(shouldEnableLiveVoiceForDispatch(true)).toBe(false);
+  });
+
+  it("builds a frame-specific replay narration line", () => {
+    expect(buildReplayFrameNarration({
+      personaName: "Arjun",
+      frameNumber: 4,
+      evidence: "The pricing label is hard to compare.",
+      fallback: "Arjun is reading pricing.",
+    })).toBe("The pricing label is hard to compare.");
+    expect(buildReplayFrameNarration({
+      personaName: "Arjun",
+      frameNumber: 4,
+      fallback: "Arjun is reading pricing.",
+    })).toBe("Arjun is reading pricing.");
+    expect(buildReplayFrameNarration({
+      personaName: "Arjun",
+      frameNumber: 4,
+    })).toBe("Arjun is reviewing replay frame 4.");
   });
 });

@@ -42,6 +42,7 @@ export function buildLiveVisualHotspots(
       label: signal.category,
       evidence: signal.visibleEvidence || signal.observation,
       recommendation: signal.recommendation,
+      step: signal.step,
     };
   });
 }

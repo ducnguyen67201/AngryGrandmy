@@ -35,7 +35,26 @@ export function buildReplayAttentionHotspots(
       label: event.type === "frustration" ? "frustration" : "attention",
       evidence: event.observation ?? event.text ?? "Observed this interface element.",
       recommendation: event.recommendation ?? "Review this high-attention interface area.",
+      step: event.step,
     }];
+  });
+}
+
+export function filterReplayHotspotsForFrame({
+  hotspots,
+  previousStep,
+  currentStep,
+}: {
+  hotspots: readonly VisualHotspot[];
+  previousStep: number | null;
+  currentStep: number;
+}): VisualHotspot[] {
+  return hotspots.filter((hotspot) => {
+    if (typeof hotspot.step !== "number") return false;
+    return (
+      hotspot.step <= currentStep &&
+      (previousStep === null || hotspot.step > previousStep)
+    );
   });
 }
 

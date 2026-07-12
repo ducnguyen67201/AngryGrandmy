@@ -62,6 +62,22 @@ export function shouldEnableLiveVoiceForDispatch(enabled: boolean): boolean {
   return !enabled;
 }
 
+export function buildReplayFrameNarration({
+  personaName,
+  frameNumber,
+  evidence,
+  fallback,
+}: {
+  personaName: string;
+  frameNumber: number;
+  evidence?: string | null;
+  fallback?: string | null;
+}) {
+  const grounded = evidence?.trim() || fallback?.trim();
+  if (grounded) return grounded;
+  return `${personaName} is reviewing replay frame ${frameNumber}.`;
+}
+
 export function isLiveNarrationEligible({
   enabled,
   eventId,

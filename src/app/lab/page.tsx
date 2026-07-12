@@ -6,6 +6,7 @@ import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, E
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import {
+  buildReplayFrameNarration,
   createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
   getLiveVoicePlaybackMode,
@@ -26,7 +27,10 @@ import {
 } from "@/lib/hotspots/build-hotspots";
 import { buildLiveVisualHotspots } from "@/lib/hotspots/build-live-hotspots";
 import { buildHeatmapDensityBlobs } from "@/lib/hotspots/build-heatmap-density";
-import { buildReplayAttentionHotspots } from "@/lib/hotspots/build-replay-attention";
+import {
+  buildReplayAttentionHotspots,
+  filterReplayHotspotsForFrame,
+} from "@/lib/hotspots/build-replay-attention";
 import {
   buildJudgeSummary,
   buildMarkdownReport,
@@ -395,6 +399,10 @@ export default function Home() {
     replayFrameIndex !== null && activeViewportFrameIndex > 0
       ? viewportFrames[activeViewportFrameIndex - 1]?.cursor ?? null
       : null;
+  const previousReplayStep =
+    replayFrameIndex !== null && activeViewportFrameIndex > 0
+      ? viewportFrames[activeViewportFrameIndex - 1]?.step ?? null
+      : null;
   const isEventInReplayFrame = useCallback(
     (event: { cursor: number }) =>
       replayFrameIndex === null ||
@@ -429,8 +437,21 @@ export default function Home() {
           ),
     [eventCursorLimit, liveEvents, previousReplayCursor, replayFrameIndex, selectedPersona?.id],
   );
+  const replayFindingHotspots = useMemo(
+    () =>
+      replayFrameIndex === null || !liveViewport
+        ? []
+        : filterReplayHotspotsForFrame({
+            hotspots: selectedSummaryHotspots,
+            previousStep: previousReplayStep,
+            currentStep: liveViewport.step ?? liveViewport.cursor,
+          }),
+    [liveViewport, previousReplayStep, replayFrameIndex, selectedSummaryHotspots],
+  );
   const selectedHotspots =
-    replayFrameIndex === null ? selectedSummaryHotspots : replayAttentionHotspots;
+    replayFrameIndex === null
+      ? selectedSummaryHotspots
+      : [...replayAttentionHotspots, ...replayFindingHotspots];
   const agentCursorPoint = selectedPersona
     ? getAgentCursorForFrame({
         events: liveEvents,
@@ -791,6 +812,42 @@ export default function Home() {
       !replayPlaying ||
       !liveVoiceEnabledRef.current ||
       !selectedPersona ||
+      !liveViewport?.imageUrl
+    ) {
+      return;
+    }
+
+    const eventId = `replay-frame:${liveViewport.id}`;
+    if (replaySpokenEventIds.current.has(eventId)) return;
+    replaySpokenEventIds.current.add(eventId);
+
+    const transcript = buildReplayFrameNarration({
+      personaName: selectedPersona.displayName,
+      frameNumber: activeViewportFrameIndex + 1,
+      evidence: replayFindingHotspots[0]?.evidence,
+      fallback: liveNarration?.text,
+    });
+    const voiceItem = createLiveVoiceQueueItem({
+      eventId,
+      audioSrc: null,
+      transcript,
+    });
+    if (voiceItem) queueLiveVoiceItem(voiceItem);
+  }, [
+    activeViewportFrameIndex,
+    liveNarration?.text,
+    liveViewport,
+    queueLiveVoiceItem,
+    replayFindingHotspots,
+    replayPlaying,
+    selectedPersona,
+  ]);
+
+  useEffect(() => {
+    if (
+      !replayPlaying ||
+      !liveVoiceEnabledRef.current ||
+      !selectedPersona ||
       !liveViewport
     ) {
       return;
@@ -846,6 +903,7 @@ export default function Home() {
     ) {
       return;
     }
+    if (replayPlaying) return;
 
     const eventsAtCurrentFrame = liveEvents.filter(
       (event) =>
