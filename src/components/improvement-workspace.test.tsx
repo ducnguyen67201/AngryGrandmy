@@ -24,7 +24,11 @@ describe("ImprovementWorkspace", () => {
         candidate={candidate}
         error={null}
         loading
+        onPrepareChange={() => undefined}
+        preparedChange={null}
+        preparingChange={false}
         proposal={null}
+        repository={null}
       />,
     );
 
@@ -40,12 +44,23 @@ describe("ImprovementWorkspace", () => {
         candidate={candidate}
         error={null}
         loading={false}
+        onPrepareChange={() => undefined}
+        preparedChange={null}
+        preparingChange={false}
         proposal={{
           mode: "codex",
           proposals: [{
             role: "fix-proposer",
             details: "Add explanatory copy directly above the identity fields.",
           }],
+        }}
+        repository={{
+          id: "0123456789abcdef",
+          name: "demo",
+          branch: "fix/usability",
+          commitSha: "abcdef1",
+          relativeTarget: "demo",
+          mode: "read-only",
         }}
       />,
     );
@@ -54,6 +69,7 @@ describe("ImprovementWorkspace", () => {
     expect(
       screen.getByText("Add explanatory copy directly above the identity fields."),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Prepare code change" })).toBeEnabled();
   });
 
   it("shows request failures beside the selected finding", () => {
@@ -62,12 +78,54 @@ describe("ImprovementWorkspace", () => {
         candidate={candidate}
         error="Improvement proposal was not accepted."
         loading={false}
+        onPrepareChange={() => undefined}
+        preparedChange={null}
+        preparingChange={false}
         proposal={null}
+        repository={null}
       />,
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Improvement proposal was not accepted.",
     );
+  });
+
+  it("shows validation checks and the real diff before claiming PR readiness", () => {
+    render(
+      <ImprovementWorkspace
+        candidate={candidate}
+        error={null}
+        loading={false}
+        onPrepareChange={() => undefined}
+        preparingChange={false}
+        proposal={{ mode: "codex", proposals: [] }}
+        repository={{
+          id: "0123456789abcdef",
+          name: "demo",
+          branch: "fix/usability",
+          commitSha: "abcdef1",
+          relativeTarget: "demo",
+          mode: "read-only",
+        }}
+        preparedChange={{
+          repository: {
+            id: "0123456789abcdef",
+            name: "demo",
+            branch: "fix/usability",
+            commitSha: "abcdef1",
+            relativeTarget: "demo",
+            mode: "read-only",
+          },
+          diff: "diff --git a/demo/app/page.tsx b/demo/app/page.tsx",
+          checks: [{ command: "pnpm build", passed: true, output: "passed" }],
+          readyForPr: true,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("PR ready")).toBeInTheDocument();
+    expect(screen.getByText("pnpm build")).toBeInTheDocument();
+    expect(screen.getByText(/diff --git a\/demo\/app\/page.tsx/)).toBeInTheDocument();
   });
 });
