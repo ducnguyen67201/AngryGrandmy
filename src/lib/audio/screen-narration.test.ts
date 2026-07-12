@@ -5,11 +5,11 @@ import { createScreenNarration } from "./screen-narration";
 describe("createScreenNarration", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("asks OpenAI vision for concise visible action commentary about the frame", async () => {
+  it("asks OpenAI vision for natural first-person think-aloud commentary", async () => {
     vi.stubEnv("OPENAI_API_KEY", "test-key");
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       output_text: JSON.stringify({
-        text: "Linda is scanning the dense copy and looking for the next clear button.",
+        text: "Hmm, this page is busy. Where is the button I need?",
         x: 46,
         y: 62,
       }),
@@ -26,7 +26,7 @@ describe("createScreenNarration", () => {
 
     expect(result).toEqual({
       source: "openai",
-      text: "Linda is scanning the dense copy and looking for the next clear button.",
+      text: "Hmm, this page is busy. Where is the button I need?",
       x: 46,
       y: 62,
     });
@@ -36,8 +36,12 @@ describe("createScreenNarration", () => {
       image_url: "data:image/png;base64,frame",
     });
     expect(JSON.stringify(body)).toContain("older adult");
-    expect(JSON.stringify(body)).toContain("visible action");
-    expect(JSON.stringify(body)).toContain("Do not quote");
+    const prompt = JSON.stringify(body);
+    expect(prompt).toContain("first person");
+    expect(prompt).toContain("think aloud");
+    expect(prompt).toContain("Hmm, can I click this?");
+    expect(prompt).toContain("Do not describe the persona in third person");
+    expect(prompt).toContain("Do not invent");
     expect(body.text.format.type).toBe("json_object");
   });
 
@@ -52,7 +56,7 @@ describe("createScreenNarration", () => {
       currentUrl: "https://shop.example/checkout",
     })).resolves.toEqual({
       source: "fallback",
-      text: "Linda is reviewing the current page and looking for the next action.",
+      text: "Hmm, I’m looking over this page. Where should I go next?",
     });
   });
 
