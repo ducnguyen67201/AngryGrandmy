@@ -9,7 +9,7 @@ describe("replay persona presence", () => {
       displayName: "Linda",
       context: "Linda is an older adult trying this product for the first time.",
     })).toEqual({
-      avatarSrc: "/grandma-linda.png",
+      avatarSrc: "/grandma-linda-2d.png",
       cursorLabel: "Linda is looking here",
       narrationLabel: "Linda is thinking aloud",
     });
