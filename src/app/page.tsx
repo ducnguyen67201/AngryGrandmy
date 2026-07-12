@@ -28,6 +28,7 @@ export default function Home() {
           <div className="nav-links">
             <a href="#how-it-works">How it works</a>
             <a href="#evidence">Evidence</a>
+            <a href="/training">Training set</a>
             <a href="/calibrate">Human calibration</a>
             <a href="#safety">Safety</a>
           </div>

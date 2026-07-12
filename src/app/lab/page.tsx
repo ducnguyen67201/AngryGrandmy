@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import Image from "next/image";
-import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, MousePointer2, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Database, Download, ExternalLink, MousePointer2, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
 import {
   ImprovementWorkspace,
@@ -128,6 +128,12 @@ type TestPlanPayload = {
   error?: { message?: string };
 };
 
+type TrainingCollectionNotice = {
+  savedCount: number;
+  trainingPointCount: number;
+  episodeCount: number;
+} | null;
+
 type VoiceReactionPayload = {
   data?: {
     source: "gradium" | "text";
@@ -242,6 +248,8 @@ export default function Home() {
   const [preparedCodeChange, setPreparedCodeChange] =
     useState<PreparedRepositoryChange | null>(null);
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
+  const [trainingNotice, setTrainingNotice] =
+    useState<TrainingCollectionNotice>(null);
   const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
   const [preparedReplayAudioIds, setPreparedReplayAudioIds] = useState<Set<string>>(
@@ -268,6 +276,7 @@ export default function Home() {
   const replayPlaybackFinishRef = useRef<(() => void) | null>(null);
   const liveEventsRef = useRef(liveEvents);
   liveEventsRef.current = liveEvents;
+  const collectedTrainingRunKey = useRef<string | null>(null);
   const autoPlanFromUrl = useRef(false);
   const sessionsRef = useRef(snapshot.sessions);
   sessionsRef.current = snapshot.sessions;
@@ -1627,6 +1636,59 @@ export default function Home() {
 
     void scoreRun();
   }, [activeSessions.length, liveMode, snapshot.analysis?.personas, snapshot.sessions]);
+
+  useEffect(() => {
+    if (snapshot.phase !== "report" || !snapshot.report) return;
+    const collectionKey = `${snapshot.id}:${snapshot.report.score}:${snapshot.updatedAt}`;
+    if (collectedTrainingRunKey.current === collectionKey) return;
+    collectedTrainingRunKey.current = collectionKey;
+
+    let cancelled = false;
+
+    async function collectTrainingEpisodes() {
+      try {
+        const response = await fetch("/api/training/episodes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            snapshot,
+            events: liveEventsRef.current,
+          }),
+        });
+        const payload = (await response.json()) as {
+          data?: {
+            savedCount?: number;
+            summary?: {
+              trainingPointCount?: number;
+              episodeCount?: number;
+            };
+          };
+        };
+        if (cancelled || !response.ok || !payload.data?.summary) return;
+        const trainingPointCount =
+          payload.data.summary.trainingPointCount ?? 0;
+        const episodeCount = payload.data.summary.episodeCount ?? 0;
+        setTrainingNotice({
+          savedCount: payload.data.savedCount ?? 0,
+          trainingPointCount,
+          episodeCount,
+        });
+        setExportLine(
+          `${trainingPointCount} training point${trainingPointCount === 1 ? "" : "s"} collected across ${episodeCount} episode${episodeCount === 1 ? "" : "s"}.`,
+        );
+      } catch {
+        if (!cancelled) {
+          setExportLine("Report ready. Training dataset collection will retry after the next run.");
+        }
+      }
+    }
+
+    void collectTrainingEpisodes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot]);
 
   useEffect(() => {
     if (!hotspotLocalizationKey || fallbackHotspots.length === 0) {
@@ -3468,6 +3530,9 @@ export default function Home() {
             <div><small>Frustration hotspots</small><b>{visualHotspots.length}</b></div>
             <div className="result-recommendation"><small>Highest-impact fix</small><b>{report.topRecommendations[0]}</b></div>
             <div className="export-actions">
+              <a className="training-set-link" href="/training">
+                <Database size={15} /> Training set
+              </a>
               <button
                 className="improve-findings-button"
                 disabled={improvementLoading}
@@ -3498,6 +3563,32 @@ export default function Home() {
 
         {!isLiveView || dispatching ? <p className="simple-status" aria-live="polite">{statusLine}</p> : null}
       </main>
+
+      {trainingNotice ? (
+        <aside
+          aria-live="polite"
+          className="training-collection-toast"
+          role="status"
+        >
+          <div>
+            <span><Database size={15} /> Training data collected</span>
+            <p>
+              {trainingNotice.trainingPointCount} training point{trainingNotice.trainingPointCount === 1 ? "" : "s"} across {trainingNotice.episodeCount} episode{trainingNotice.episodeCount === 1 ? "" : "s"}.
+            </p>
+            {trainingNotice.savedCount === 0 ? (
+              <small>Already saved for this run.</small>
+            ) : null}
+          </div>
+          <a href="/training">View training set</a>
+          <button
+            aria-label="Dismiss training data notification"
+            onClick={() => setTrainingNotice(null)}
+            type="button"
+          >
+            Close
+          </button>
+        </aside>
+      ) : null}
 
       {!isLiveView ? <footer className="simple-footer">
         <ShieldCheck size={14} /> Only test products you own or have permission to evaluate.
