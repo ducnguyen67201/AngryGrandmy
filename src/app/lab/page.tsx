@@ -10,6 +10,7 @@ import {
 } from "@/components/improvement-workspace";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import { GrannyArrival } from "@/components/granny-arrival";
+import { GrandmaFieldNotes } from "@/components/grandma-field-notes";
 import {
   createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
@@ -65,6 +66,7 @@ import type {
 import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
 import { getPanelFeedback } from "@/lib/ui/panel-feedback";
 import { getRemainingGrannyArrivalDelay } from "@/lib/ui/granny-arrival";
+import { buildGrandmaFieldNotes } from "@/lib/ui/grandma-field-notes";
 import { getReplayPersonaPresence } from "@/lib/ui/replay-persona-presence";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 import type { CalibrationSession } from "@/lib/calibration/calibration";
@@ -375,6 +377,15 @@ export default function Home() {
   const dispatchedPersonas = useMemo(
     () => getDispatchedPersonas(snapshot.analysis, snapshot.sessions),
     [snapshot.analysis, snapshot.sessions],
+  );
+  const grandmaFieldNotes = useMemo(
+    () =>
+      buildGrandmaFieldNotes({
+        events: liveEvents,
+        personas: snapshot.analysis?.personas ?? [],
+        sessions: snapshot.sessions,
+      }),
+    [liveEvents, snapshot.analysis?.personas, snapshot.sessions],
   );
   const selectedPersona =
     snapshot.analysis?.personas.find((persona) => persona.id === snapshot.selectedPersonaId) ??
@@ -3000,7 +3011,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="simple-shell">
+      <main className={`simple-shell ${isLiveView ? "is-live-shell" : ""}`}>
         {loading && !snapshot.analysis && !isLiveView ? <GrannyArrival /> : null}
 
         {!loading && !snapshot.analysis && !isLiveView ? (
@@ -3439,6 +3450,11 @@ export default function Home() {
                   ) : null}
                 </div>
               </div>
+
+              <GrandmaFieldNotes
+                notes={grandmaFieldNotes}
+                running={!runComplete}
+              />
 
               </div>
           </section>
