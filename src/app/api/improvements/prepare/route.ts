@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fail, ok, validationFailure } from "@/lib/api/responses";
 import { prepareRepositoryChange } from "@/lib/fixes/prepare-repository-change";
+import { productionRepositoryChangeDependencies } from "@/lib/fixes/repository-change-adapters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,7 +17,10 @@ const PrepareChangeSchema = z.object({
 export async function POST(request: Request) {
   try {
     const input = PrepareChangeSchema.parse(await request.json());
-    const prepared = await prepareRepositoryChange(input);
+    const prepared = await prepareRepositoryChange(
+      input,
+      productionRepositoryChangeDependencies,
+    );
     return ok(prepared, { published: false });
   } catch (error) {
     if (error instanceof z.ZodError) return validationFailure(error);

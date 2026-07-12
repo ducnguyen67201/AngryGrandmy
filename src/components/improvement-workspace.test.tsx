@@ -91,6 +91,24 @@ describe("ImprovementWorkspace", () => {
     );
   });
 
+  it("does not enable repository writes when no repo is connected", () => {
+    render(
+      <ImprovementWorkspace
+        candidate={candidate}
+        error={null}
+        loading={false}
+        onPrepareChange={() => undefined}
+        preparedChange={null}
+        preparingChange={false}
+        proposal={{ mode: "fallback", proposals: [] }}
+        repository={null}
+      />,
+    );
+
+    expect(screen.getByText("Repository not connected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Prepare code change" })).toBeDisabled();
+  });
+
   it("shows validation checks and the real diff before claiming PR readiness", () => {
     render(
       <ImprovementWorkspace
