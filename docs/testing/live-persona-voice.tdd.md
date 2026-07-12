@@ -77,3 +77,11 @@ This iteration uses Gradium's existing REST TTS response and a browser audio que
 - GREEN checkpoint: `b90c613 fix: require real runs for share links` removes fixture-backed share loading, keeps only `run=1` / `live=1` for real-run preparation, generates the real persona plan from the URL, and keeps H dispatch behind an explicit presenter click.
 - Dispatch contract: `/api/run-h-agents` no longer substitutes `createDemoRun()` when H is unavailable or launch fails; it returns a clear error instead.
 - Browser proof: `http://localhost:3000/?url=https%3A%2F%2Fgettrustloop.app%2F&objective=Find+the+primary+user+workflow+and+stop+before+an+irreversible+action.&testers=3&run=1` opens to `Who should try it?`, `Ready to dispatch`, generated target-specific personas, and no completed replay evidence.
+
+### Frame-by-frame replay sync
+
+- Reported behavior: pressing Play advanced screenshots, but the heatmap and audio did not change frame by frame.
+- RED checkpoint: `89d9338 test: reproduce replay summary hotspot drift` requires final finding hotspots to be filtered by the active replay step window.
+- GREEN checkpoint: `ea0c39c fix: sync replay audio and heatmap by frame` adds step metadata to hotspots, combines current-frame runtime attention with current-frame finding hotspots, and queues one immediate browser-spoken replay line per frame id while Play is running.
+- Verification: `pnpm vitest run src/lib/hotspots/build-replay-attention.test.ts src/lib/audio/live-voice-queue.test.ts` passes 22 tests; `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm audit` pass.
+- Coverage: focused replay/audio helper coverage is 95.45% statements, 95.12% branches, 100% functions, and 100% lines.
