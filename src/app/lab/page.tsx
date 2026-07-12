@@ -63,6 +63,7 @@ import type {
 } from "@/lib/schemas/run";
 import { getHeatmapDisplay } from "@/lib/ui/heatmap-display";
 import { getPanelFeedback } from "@/lib/ui/panel-feedback";
+import { getReplayPersonaPresence } from "@/lib/ui/replay-persona-presence";
 import { createCustomPersona } from "@/lib/personas/create-custom-persona";
 import type { CalibrationSession } from "@/lib/calibration/calibration";
 import { calculateBehaviorOverlap } from "@/lib/calibration/calculate-overlap";
@@ -501,6 +502,7 @@ export default function Home() {
         : null) ??
     selectedPersona?.introLine ??
     "No persona finding is ready yet.";
+  const replayPersonaPresence = getReplayPersonaPresence(selectedPersona);
   const selectedFriction = liveFrustration ? {step:liveFrustration.step,category:liveFrustration.category??"clarity",severity:liveFrustration.severity??3,observation:liveFrustration.observation??"Usability barrier",visibleEvidence:liveFrustration.visibleEvidence??"Live agent evidence",recommendation:liveFrustration.recommendation??"Remove this barrier",narratedObservation:liveFrustration.observation??"This is frustrating",recovered:false} : replayFrameIndex === null ? selectedSession?.finding?.frictionEvents[0] ?? null : null;
 
   const generatePlan = useCallback(async (
@@ -3267,8 +3269,8 @@ export default function Home() {
                   {agentCursorPoint ? (
                     <div className="agent-viewport-coordinate-space">
                       <div
-                        aria-label={`${selectedPersona?.displayName ?? "Agent"} cursor, ${agentCursorPoint.source === "agent" ? "reported by H" : agentCursorPoint.source === "vision" ? "localized from the screenshot" : "estimated for legacy replay"}`}
-                        className={`agent-cursor ${agentCursorPoint.source === "agent" ? "is-reported" : agentCursorPoint.source === "vision" ? "is-vision" : "is-estimated"}`}
+                        aria-label={`${replayPersonaPresence.cursorLabel}, ${agentCursorPoint.source === "agent" ? "reported by H" : agentCursorPoint.source === "vision" ? "localized from the screenshot" : "estimated for legacy replay"}`}
+                        className={`agent-cursor ${replayPersonaPresence.avatarSrc ? "has-persona" : ""} ${agentCursorPoint.source === "agent" ? "is-reported" : agentCursorPoint.source === "vision" ? "is-vision" : "is-estimated"}`}
                         data-cursor-source={agentCursorPoint.source}
                         style={{
                           left: `${agentCursorPoint.x}%`,
@@ -3277,8 +3279,19 @@ export default function Home() {
                       >
                         <i aria-hidden="true" />
                         <MousePointer2 aria-hidden="true" size={30} />
+                        {replayPersonaPresence.avatarSrc ? (
+                          <Image
+                            alt=""
+                            aria-hidden="true"
+                            className="agent-cursor-persona"
+                            height={48}
+                            src={replayPersonaPresence.avatarSrc}
+                            width={48}
+                          />
+                        ) : null}
                         <span>
-                          {selectedPersona?.displayName ?? "Agent"} cursor · {agentCursorPoint.source === "agent" ? "H reported" : agentCursorPoint.source === "vision" ? "vision located" : "estimated"}
+                          {replayPersonaPresence.cursorLabel}
+                          <small>{agentCursorPoint.source === "agent" ? "H reported" : agentCursorPoint.source === "vision" ? "vision located" : "estimated"}</small>
                         </span>
                       </div>
                     </div>
@@ -3289,7 +3302,21 @@ export default function Home() {
                     </div>
                   ) : null}
                   <div className="thought-annotation">
-                    <span><Volume2 size={12} /> {liveViewport?.imageUrl ? "Screen action narration" : hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}</span>
+                    <span>
+                      {replayPersonaPresence.avatarSrc ? (
+                        <Image
+                          alt=""
+                          aria-hidden="true"
+                          className="thought-persona-avatar"
+                          height={24}
+                          src={replayPersonaPresence.avatarSrc}
+                          width={24}
+                        />
+                      ) : <Volume2 size={12} />}
+                      {replayPersonaPresence.avatarSrc
+                        ? replayPersonaPresence.narrationLabel
+                        : liveViewport?.imageUrl ? "Screen action narration" : hasLiveNarration ? "Live agent narration" : runComplete ? "Finding narration" : "Persona preview"}
+                    </span>
                     <blockquote>“{selectedNarration}”</blockquote>
                     {runComplete && liveViewport?.imageUrl ? (
                       <small>
