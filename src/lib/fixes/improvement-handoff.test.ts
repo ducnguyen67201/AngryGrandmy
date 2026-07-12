@@ -11,7 +11,7 @@ function session(
     sessionId: `session-${personaId}`,
     personaId,
     status: "completed",
-    visualState: "done",
+    visualState: "succeeded",
     eventCursor: 0,
     stepCount: 4,
     startedAt: null,
