@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import Image from "next/image";
 import { Activity, AlertTriangle, ArrowRight, Bot, Check, Clipboard, Download, ExternalLink, MousePointer2, Pause, Play, ShieldCheck, SkipBack, SkipForward, Sparkles, Volume2 } from "lucide-react";
 import { AnimatedAgentJourney } from "@/components/animated-agent-journey";
+import {
+  ImprovementWorkspace,
+  type ImprovementProposal,
+} from "@/components/improvement-workspace";
 import { PersonaBuilder, type PersonaDraft } from "@/components/persona-builder";
 import {
   createLiveVoiceQueueItem,
@@ -87,6 +91,12 @@ import {
   narrationEventIdForFrame,
   nextReplayFrameIndex,
 } from "@/lib/replay/synchronized-replay";
+import {
+  selectImprovementCandidate,
+  type ImprovementCandidate,
+} from "@/lib/fixes/improvement-handoff";
+import type { PreparedRepositoryChange } from "@/lib/fixes/prepare-repository-change";
+import type { PublicRepositoryMetadata } from "@/lib/repository/local-repository";
 
 type ApiRunPayload = {
   data?: RunSnapshot;
@@ -215,6 +225,17 @@ export default function Home() {
   const [persistenceHydrated, setPersistenceHydrated] = useState(false);
   const [hasRestoredSavedRun, setHasRestoredSavedRun] = useState(false);
   const [fixRequestIds, setFixRequestIds] = useState<Set<string>>(() => new Set());
+  const [improvementLoading, setImprovementLoading] = useState(false);
+  const [improvementCandidate, setImprovementCandidate] =
+    useState<ImprovementCandidate | null>(null);
+  const [improvementProposal, setImprovementProposal] =
+    useState<ImprovementProposal | null>(null);
+  const [improvementError, setImprovementError] = useState<string | null>(null);
+  const [connectedRepository, setConnectedRepository] =
+    useState<PublicRepositoryMetadata | null>(null);
+  const [preparingCodeChange, setPreparingCodeChange] = useState(false);
+  const [preparedCodeChange, setPreparedCodeChange] =
+    useState<PreparedRepositoryChange | null>(null);
   const [liveEvents, setLiveEvents] = useState<AgentRuntimeEvent[]>([]);
   const [replayFrameIndex, setReplayFrameIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
@@ -1974,6 +1995,126 @@ export default function Home() {
     else setStatusLine("Could not start the fix proposal job.");
   }
 
+  async function handleImproveFromFindings() {
+    const candidate = selectImprovementCandidate(snapshot.sessions);
+    if (!candidate) {
+      setStatusLine("No actionable friction finding is available yet.");
+      return;
+    }
+
+    setImprovementCandidate(candidate);
+    setImprovementProposal(null);
+    setImprovementError(null);
+    setConnectedRepository(null);
+    setPreparedCodeChange(null);
+
+    const persona = snapshot.analysis?.personas.find(
+      (item) => item.id === candidate.personaId,
+    );
+    if (!persona) {
+      const message = "The finding's tester context is unavailable.";
+      setImprovementError(message);
+      setStatusLine(message);
+      return;
+    }
+
+    const requestId = `${candidate.sessionId}:final:${candidate.friction.step}`;
+    setImprovementLoading(true);
+    setStatusLine(`Preparing an improvement from ${persona.displayName}'s strongest finding.`);
+
+    try {
+      const response = await fetch("/api/report?fixJob=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runId: snapshot.id,
+          sessionId: candidate.sessionId,
+          personaId: persona.id,
+          personaName: persona.displayName,
+          productUrl: snapshot.url,
+          objective: snapshot.objective ?? objective,
+          frustrationEventId: requestId,
+          frustration: candidate.friction,
+        }),
+      });
+      if (!response.ok) throw new Error("Improvement proposal was not accepted.");
+      const payload = (await response.json()) as { data?: ImprovementProposal };
+      if (!payload.data) throw new Error("The proposal response was empty.");
+
+      setFixRequestIds((current) => new Set(current).add(requestId));
+      setImprovementProposal(payload.data);
+      const repositoryResponse = await fetch("/api/repository");
+      const repositoryPayload = (await repositoryResponse.json()) as {
+        data?: PublicRepositoryMetadata;
+        error?: { message?: string };
+      };
+      if (repositoryResponse.ok && repositoryPayload.data) {
+        setConnectedRepository(repositoryPayload.data);
+      } else {
+        setImprovementError(
+          repositoryPayload.error?.message ?? "No local repository is connected.",
+        );
+      }
+      setSnapshot((current) => ({
+        ...current,
+        selectedPersonaId: candidate.personaId,
+      }));
+      setStatusLine("Improvement proposal queued from the highest-impact finding.");
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : "Could not prepare the improvement proposal.";
+      setImprovementError(message);
+      setStatusLine(message);
+    } finally {
+      setImprovementLoading(false);
+    }
+  }
+
+  async function handlePrepareCodeChange() {
+    if (!connectedRepository || !improvementCandidate || !improvementProposal) return;
+    setPreparingCodeChange(true);
+    setPreparedCodeChange(null);
+    setImprovementError(null);
+    setStatusLine(`Preparing a validated change in ${connectedRepository.name}.`);
+
+    try {
+      const response = await fetch("/api/improvements/prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repositoryId: connectedRepository.id,
+          recommendation: improvementCandidate.friction.recommendation,
+          evidence: improvementCandidate.friction.visibleEvidence,
+          proposal: improvementProposal.proposals
+            .map((item) => `${item.role}: ${item.details}`)
+            .join("\n\n"),
+        }),
+      });
+      const payload = (await response.json()) as {
+        data?: PreparedRepositoryChange;
+        error?: { message?: string };
+      };
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error?.message ?? "Could not prepare the code change.");
+      }
+      setPreparedCodeChange(payload.data);
+      setStatusLine(
+        payload.data.readyForPr
+          ? "Local diff validated and ready for PR creation."
+          : "Local diff prepared, but validation still needs attention.",
+      );
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : "Could not prepare the code change.";
+      setImprovementError(message);
+      setStatusLine(message);
+    } finally {
+      setPreparingCodeChange(false);
+    }
+  }
+
   async function handleQueueCalibratedRegression() {
     if (!activeCalibration || !runComplete) return;
     setRegressionLine("Queueing a proposal-only NemoClaw regression job...");
@@ -3262,10 +3403,31 @@ export default function Home() {
             <div><small>Frustration hotspots</small><b>{visualHotspots.length}</b></div>
             <div className="result-recommendation"><small>Highest-impact fix</small><b>{report.topRecommendations[0]}</b></div>
             <div className="export-actions">
+              <button
+                className="improve-findings-button"
+                disabled={improvementLoading}
+                onClick={handleImproveFromFindings}
+                type="button"
+              >
+                <Sparkles size={15} />
+                {improvementLoading ? "Preparing…" : "Improve from findings"}
+              </button>
               <button onClick={handleCopySummary} type="button"><Clipboard size={15} /> Copy</button>
               <button onClick={() => handleDownloadReport("markdown")} type="button"><Download size={15} /> Report</button>
             </div>
           </section>
+          {improvementCandidate ? (
+            <ImprovementWorkspace
+              candidate={improvementCandidate}
+              error={improvementError}
+              loading={improvementLoading}
+              onPrepareChange={handlePrepareCodeChange}
+              preparedChange={preparedCodeChange}
+              preparingChange={preparingCodeChange}
+              proposal={improvementProposal}
+              repository={connectedRepository}
+            />
+          ) : null}
           </details>
         ) : null}
 
