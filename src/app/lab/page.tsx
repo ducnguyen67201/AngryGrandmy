@@ -9,6 +9,7 @@ import {
   createLiveVoiceQueueItem,
   enqueueLiveVoiceItem,
   getLiveVoicePlaybackMode,
+  getLiveVoicePlaybackSettings,
   getPostRunScreenNarrationFrames,
   isLiveNarrationEligible,
   shouldSpeakCurrentNarrationOnEnable,
@@ -142,6 +143,8 @@ type LocalizeHotspotsPayload = {
   };
   error?: { message?: string };
 };
+
+const LIVE_VOICE_PLAYBACK_SETTINGS = getLiveVoicePlaybackSettings();
 const TERMINAL_STATUSES = new Set<NormalizedSession["status"]>([
   "completed",
   "timed_out",
@@ -627,7 +630,7 @@ export default function Home() {
         return;
       }
       const utterance = new SpeechSynthesisUtterance(next.transcript);
-      utterance.rate = 0.9;
+      utterance.rate = LIVE_VOICE_PLAYBACK_SETTINGS.browserSpeechRate;
       utterance.pitch = 1.05;
       utterance.onend = finish;
       utterance.onerror = () => {
@@ -642,6 +645,7 @@ export default function Home() {
     const audio = liveVoiceAudioRef.current ?? new Audio();
     liveVoiceAudioRef.current = audio;
     audio.volume = 1;
+    audio.playbackRate = LIVE_VOICE_PLAYBACK_SETTINGS.providerPlaybackRate;
     audio.src = next.audioSrc!;
     audio.onended = () => {
       audio.onended = null;
@@ -696,7 +700,7 @@ export default function Home() {
             return;
           }
           const utterance = new SpeechSynthesisUtterance(item.transcript);
-          utterance.rate = 0.9;
+          utterance.rate = LIVE_VOICE_PLAYBACK_SETTINGS.browserSpeechRate;
           utterance.pitch = 1.05;
           utterance.onend = finish;
           utterance.onerror = finish;
@@ -708,6 +712,7 @@ export default function Home() {
         const audio = liveVoiceAudioRef.current ?? new Audio();
         liveVoiceAudioRef.current = audio;
         audio.volume = 1;
+        audio.playbackRate = LIVE_VOICE_PLAYBACK_SETTINGS.providerPlaybackRate;
         audio.src = item.audioSrc!;
         audio.onended = finish;
         audio.onerror = finish;
@@ -1908,7 +1913,9 @@ export default function Home() {
           : null;
 
       if (audioSrc) {
-        await new Audio(audioSrc).play();
+        const audio = new Audio(audioSrc);
+        audio.playbackRate = LIVE_VOICE_PLAYBACK_SETTINGS.providerPlaybackRate;
+        await audio.play();
         setVoiceLine(
           payload.data.source === "gradium"
             ? "Gradium voice played."
@@ -3462,7 +3469,7 @@ function speakWithBrowser(text: string) {
 
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 0.9;
+  utterance.rate = LIVE_VOICE_PLAYBACK_SETTINGS.browserSpeechRate;
   utterance.pitch = 1.05;
   window.speechSynthesis.speak(utterance);
 }

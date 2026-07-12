@@ -4,6 +4,15 @@ export type LiveVoiceQueueItem = {
   transcript: string;
 };
 
+const LIVE_VOICE_PLAYBACK_SETTINGS = {
+  providerPlaybackRate: 1.2,
+  browserSpeechRate: 1.15,
+} as const;
+
+export function getLiveVoicePlaybackSettings() {
+  return LIVE_VOICE_PLAYBACK_SETTINGS;
+}
+
 export function createLiveVoiceQueueItem(input: LiveVoiceQueueItem) {
   const transcript = input.transcript.trim();
   if (!transcript) return null;

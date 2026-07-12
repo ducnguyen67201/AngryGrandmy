@@ -42,6 +42,9 @@ export async function createVoiceReaction(
         ].find((voiceId) => voiceId?.trim()) ?? HOLLY_MATURE_CALM_VOICE_ID,
         output_format: process.env.GRADIUM_OUTPUT_FORMAT ?? "wav",
         only_audio: true,
+        json_config: {
+          padding_bonus: -1.5,
+        },
       }),
       signal: AbortSignal.timeout(30_000),
     });
